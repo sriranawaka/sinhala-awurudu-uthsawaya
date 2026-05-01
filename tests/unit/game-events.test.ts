@@ -1118,3 +1118,135 @@ describe("Guess-text judge text similarity", () => {
     expect(typeof textAnswer).toBe("string");
   });
 });
+
+describe("Unique position enforcement in medal assignment", () => {
+  /**
+   * Mirrors the handleAssignMedal logic from the game detail page.
+   * Given existing scores, event key groups, assigns a position to a participant
+   * and returns updated scores (removing previous holder of that position AND
+   * any existing position the participant had).
+   */
+  function assignMedal(
+    scores: Score[],
+    gameId: string,
+    eventGroups: RegistrationAgeGroup[],
+    participantId: string,
+    participantName: string,
+    ageGroup: RegistrationAgeGroup,
+    position: 1 | 2 | 3
+  ): Score[] {
+    let updated = [...scores];
+    // Remove previous holder of this position across all age groups in the event
+    const prev = updated.find(
+      (s) => s.gameId === gameId && eventGroups.includes(s.ageGroup as RegistrationAgeGroup) && s.position === position
+    );
+    if (prev) updated = updated.filter((s) => s.participantId !== prev.participantId);
+    // Remove any existing score for this participant (if they had a different position)
+    updated = updated.filter((s) => s.participantId !== participantId);
+    // Assign new
+    updated.push(makeScore(gameId, participantId, participantName, ageGroup, position));
+    return updated;
+  }
+
+  it("only one participant can hold position 1 within same age group", () => {
+    let scores: Score[] = [];
+    scores = assignMedal(scores, "g1", ["adult"], "p1", "Alice", "adult", 1);
+    scores = assignMedal(scores, "g1", ["adult"], "p2", "Bob", "adult", 1);
+    const pos1 = scores.filter((s) => s.position === 1);
+    expect(pos1).toHaveLength(1);
+    expect(pos1[0].participantId).toBe("p2");
+  });
+
+  it("only one participant can hold position 2 within same age group", () => {
+    let scores: Score[] = [];
+    scores = assignMedal(scores, "g1", ["adult"], "p1", "Alice", "adult", 2);
+    scores = assignMedal(scores, "g1", ["adult"], "p2", "Bob", "adult", 2);
+    const pos2 = scores.filter((s) => s.position === 2);
+    expect(pos2).toHaveLength(1);
+    expect(pos2[0].participantId).toBe("p2");
+  });
+
+  it("only one participant can hold position 3 within same age group", () => {
+    let scores: Score[] = [];
+    scores = assignMedal(scores, "g1", ["teen"], "p1", "Alice", "teen", 3);
+    scores = assignMedal(scores, "g1", ["teen"], "p2", "Bob", "teen", 3);
+    const pos3 = scores.filter((s) => s.position === 3);
+    expect(pos3).toHaveLength(1);
+    expect(pos3[0].participantId).toBe("p2");
+  });
+
+  it("combined event: position 1 assigned to kid replaces teen who had position 1", () => {
+    const eventGroups: RegistrationAgeGroup[] = ["kid", "teen", "adult"];
+    let scores: Score[] = [];
+    scores = assignMedal(scores, "g1", eventGroups, "teen1", "Teen1", "teen", 1);
+    expect(scores.filter((s) => s.position === 1)).toHaveLength(1);
+    scores = assignMedal(scores, "g1", eventGroups, "kid1", "Kid1", "kid", 1);
+    const pos1 = scores.filter((s) => s.position === 1);
+    expect(pos1).toHaveLength(1);
+    expect(pos1[0].participantId).toBe("kid1");
+    // teen1 should be completely removed
+    expect(scores.find((s) => s.participantId === "teen1")).toBeUndefined();
+  });
+
+  it("combined event: all three positions across different age groups are unique", () => {
+    const eventGroups: RegistrationAgeGroup[] = ["kid", "teen", "adult"];
+    let scores: Score[] = [];
+    scores = assignMedal(scores, "g1", eventGroups, "kid1", "Kid1", "kid", 1);
+    scores = assignMedal(scores, "g1", eventGroups, "teen1", "Teen1", "teen", 2);
+    scores = assignMedal(scores, "g1", eventGroups, "adult1", "Adult1", "adult", 3);
+    expect(scores).toHaveLength(3);
+    expect(scores.filter((s) => s.position === 1)).toHaveLength(1);
+    expect(scores.filter((s) => s.position === 2)).toHaveLength(1);
+    expect(scores.filter((s) => s.position === 3)).toHaveLength(1);
+  });
+
+  it("reassigning a participant removes their old position first", () => {
+    let scores: Score[] = [];
+    scores = assignMedal(scores, "g1", ["adult"], "p1", "Alice", "adult", 1);
+    scores = assignMedal(scores, "g1", ["adult"], "p1", "Alice", "adult", 2);
+    expect(scores).toHaveLength(1);
+    expect(scores[0].position).toBe(2);
+    expect(scores[0].participantId).toBe("p1");
+  });
+
+  it("different games do not interfere with each other", () => {
+    let scores: Score[] = [];
+    scores = assignMedal(scores, "g1", ["adult"], "p1", "Alice", "adult", 1);
+    scores = assignMedal(scores, "g2", ["adult"], "p2", "Bob", "adult", 1);
+    const game1Pos1 = scores.filter((s) => s.gameId === "g1" && s.position === 1);
+    const game2Pos1 = scores.filter((s) => s.gameId === "g2" && s.position === 1);
+    expect(game1Pos1).toHaveLength(1);
+    expect(game2Pos1).toHaveLength(1);
+    expect(game1Pos1[0].participantId).toBe("p1");
+    expect(game2Pos1[0].participantId).toBe("p2");
+  });
+
+  it("assigning all 3 positions then replacing position 2 keeps exactly 3 scores", () => {
+    let scores: Score[] = [];
+    scores = assignMedal(scores, "g1", ["adult"], "p1", "Alice", "adult", 1);
+    scores = assignMedal(scores, "g1", ["adult"], "p2", "Bob", "adult", 2);
+    scores = assignMedal(scores, "g1", ["adult"], "p3", "Charlie", "adult", 3);
+    expect(scores).toHaveLength(3);
+    scores = assignMedal(scores, "g1", ["adult"], "p4", "Dave", "adult", 2);
+    expect(scores).toHaveLength(3);
+    expect(scores.find((s) => s.position === 2)?.participantId).toBe("p4");
+    // p2 should be gone
+    expect(scores.find((s) => s.participantId === "p2")).toBeUndefined();
+  });
+
+  it("BUG FIX: combined event prevents duplicate positions across different ageGroups", () => {
+    // This is the exact bug scenario - kid+teen+adult event
+    const eventGroups: RegistrationAgeGroup[] = ["kid", "teen", "adult"];
+    let scores: Score[] = [];
+    // Judge assigns position 1 to a kid
+    scores = assignMedal(scores, "g1", eventGroups, "kid1", "Kid1", "kid", 1);
+    // Judge assigns position 1 to a teen - should REPLACE the kid
+    scores = assignMedal(scores, "g1", eventGroups, "teen1", "Teen1", "teen", 1);
+    // There should be exactly ONE position 1 holder
+    const pos1holders = scores.filter((s) => s.position === 1);
+    expect(pos1holders).toHaveLength(1);
+    expect(pos1holders[0].participantId).toBe("teen1");
+    // Total scores should be 1, not 2
+    expect(scores).toHaveLength(1);
+  });
+});

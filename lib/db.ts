@@ -271,6 +271,21 @@ export async function addJudge(judge: Omit<Judge, "id">): Promise<string> {
   return id;
 }
 
+export async function isRegisteredJudge(email: string): Promise<boolean> {
+  const id = email.toLowerCase().replace(/[^a-z0-9]/g, "_");
+  const existing = await getDoc(doc(db, "judges", id));
+  return existing.exists();
+}
+
+export async function updateJudgeName(email: string, name: string): Promise<void> {
+  const id = email.toLowerCase().replace(/[^a-z0-9]/g, "_");
+  const ref = doc(db, "judges", id);
+  const existing = await getDoc(ref);
+  if (existing.exists()) {
+    await setDoc(ref, { ...existing.data(), name }, { merge: true });
+  }
+}
+
 export async function removeJudge(judgeId: string): Promise<void> {
   await deleteDoc(doc(db, "judges", judgeId));
 }

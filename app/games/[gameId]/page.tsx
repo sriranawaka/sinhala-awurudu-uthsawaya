@@ -165,9 +165,16 @@ export default function GameDetailPage({
 
   const handleAssignMedal = async (participantId: string, participantName: string, position: 1 | 2 | 3, ageGroup: RegistrationAgeGroup) => {
     setBusyAction(`medal-${participantId}-${position}`);
-    // Remove previous holder of this position in the same age group
-    const prev = scores.find((s) => s.gameId === gameId && s.ageGroup === ageGroup && s.position === position);
+    // Find all age groups in this event to check for duplicate positions across combined events
+    const eventAgeGroups = eventKeyOrder
+      .filter((ek) => eventKeyGroups(ek).includes(ageGroup))
+      .flatMap((ek) => eventKeyGroups(ek));
+    // Remove previous holder of this position across all age groups in the event
+    const prev = scores.find((s) => s.gameId === gameId && eventAgeGroups.includes(s.ageGroup as RegistrationAgeGroup) && s.position === position);
     if (prev) await deleteScore(gameId, prev.participantId);
+    // Also remove any existing score for this participant (if they had a different position)
+    const existing = scores.find((s) => s.gameId === gameId && s.participantId === participantId);
+    if (existing) await deleteScore(gameId, existing.participantId);
     await setScore({ gameId, participantId, participantName, ageGroup, position, points: position === 1 ? 3 : position === 2 ? 2 : 1, timestamp: Date.now() });
     await refreshData();
     setBusyAction(null);

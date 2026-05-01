@@ -3,12 +3,12 @@ import type { Judge, GameEventStatus } from "@/types";
 
 const makeJudge = (
   email: string,
-  name: string,
+  name?: string,
   addedBy: string = "admin@test.com"
 ): Judge => ({
   id: email.toLowerCase().replace(/[^a-z0-9]/g, "_"),
   email: email.toLowerCase(),
-  name,
+  name: name ?? email.toLowerCase().split("@")[0],
   addedBy,
   addedAt: Date.now(),
 });
@@ -261,5 +261,77 @@ describe("Judge privileges", () => {
       const defaultLocale = "en";
       expect(defaultLocale).toBe("en");
     });
+  });
+});
+
+describe("Email-only judge registration", () => {
+  it("derives name from email when no name provided", () => {
+    const judge = makeJudge("nimal.perera@gmail.com");
+    expect(judge.name).toBe("nimal.perera");
+    expect(judge.email).toBe("nimal.perera@gmail.com");
+  });
+
+  it("derives name from email with mixed case", () => {
+    const judge = makeJudge("Kamala.Silva@Gmail.com");
+    expect(judge.name).toBe("kamala.silva");
+  });
+
+  it("uses explicit name when provided", () => {
+    const judge = makeJudge("test@gmail.com", "Explicit Name");
+    expect(judge.name).toBe("Explicit Name");
+  });
+
+  it("only requires email to register a judge", () => {
+    const email = "newjudge@gmail.com";
+    const judge = makeJudge(email);
+    expect(judge.email).toBe(email);
+    expect(judge.name).toBe("newjudge");
+    expect(judge.id).toBe("newjudge_gmail_com");
+    expect(judge.addedBy).toBe("admin@test.com");
+    expect(judge.addedAt).toBeGreaterThan(0);
+  });
+});
+
+describe("Google auth judge verification", () => {
+  const isRegisteredJudge = (email: string, judges: Judge[]) =>
+    judges.some((j) => j.email === email.toLowerCase());
+
+  const registeredJudges: Judge[] = [
+    makeJudge("judge1@gmail.com"),
+    makeJudge("judge2@gmail.com"),
+  ];
+
+  it("allows login for registered judge email", () => {
+    expect(isRegisteredJudge("judge1@gmail.com", registeredJudges)).toBe(true);
+  });
+
+  it("allows login regardless of email case", () => {
+    expect(isRegisteredJudge("JUDGE1@Gmail.COM", registeredJudges)).toBe(true);
+  });
+
+  it("rejects login for unregistered email", () => {
+    expect(isRegisteredJudge("random@gmail.com", registeredJudges)).toBe(false);
+  });
+
+  it("rejects empty email", () => {
+    expect(isRegisteredJudge("", registeredJudges)).toBe(false);
+  });
+});
+
+describe("Judge name update on Google sign-in", () => {
+  it("updates name from Google profile", () => {
+    const judge = makeJudge("test@gmail.com");
+    expect(judge.name).toBe("test");
+    const googleDisplayName = "Test User";
+    const updated = { ...judge, name: googleDisplayName };
+    expect(updated.name).toBe("Test User");
+    expect(updated.email).toBe("test@gmail.com");
+  });
+
+  it("keeps email-derived name if no Google display name", () => {
+    const judge = makeJudge("nimal@gmail.com");
+    const googleDisplayName: string | null = null;
+    const finalName = googleDisplayName ?? judge.name;
+    expect(finalName).toBe("nimal");
   });
 });

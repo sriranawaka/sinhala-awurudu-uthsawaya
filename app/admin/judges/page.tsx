@@ -9,7 +9,6 @@ export default function JudgesPage() {
   const [judges, setJudges] = useState<Judge[]>([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
   const [removing, setRemoving] = useState<string | null>(null);
@@ -29,10 +28,9 @@ export default function JudgesPage() {
     setError("");
 
     const trimmedEmail = email.trim().toLowerCase();
-    const trimmedName = name.trim();
 
-    if (!trimmedEmail || !trimmedName) {
-      setError("Name and email are required");
+    if (!trimmedEmail) {
+      setError("Email is required");
       return;
     }
 
@@ -46,12 +44,11 @@ export default function JudgesPage() {
       const user = getCurrentUser();
       await addJudge({
         email: trimmedEmail,
-        name: trimmedName,
+        name: trimmedEmail.split("@")[0],
         addedBy: user?.email || "admin",
         addedAt: Date.now(),
       });
       setEmail("");
-      setName("");
       await loadJudges();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add judge");
@@ -83,18 +80,6 @@ export default function JudgesPage() {
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gold/10">
         <h2 className="font-semibold text-maroon mb-3">Add a Judge</h2>
         <form onSubmit={handleAdd} className="space-y-3">
-          <div>
-            <label className="text-sm font-medium text-foreground/70 block mb-1">
-              Name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Nimal Perera"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
-            />
-          </div>
           <div>
             <label className="text-sm font-medium text-foreground/70 block mb-1">
               Gmail Address
