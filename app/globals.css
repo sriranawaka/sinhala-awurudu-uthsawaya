@@ -1,26 +1,54 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #F8FAFC;
+  --foreground: #1E293B;
+  --primary: #7C3AED;
+  --primary-light: #A78BFA;
+  --accent: #F59E0B;
+  --surface: #FFFFFF;
+  --muted: #94A3B8;
+  --success: #10B981;
+  --danger: #EF4444;
+  --info: #3B82F6;
+  /* Legacy aliases for gradual migration */
+  --maroon: #7C3AED;
+  --gold: #F59E0B;
+  --cream: #F8FAFC;
+  --terracotta: #EF4444;
+  --forest: #10B981;
+  --sunset-orange: #F97316;
+  --sunset-yellow: #FBBF24;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-primary: var(--primary);
+  --color-primary-light: var(--primary-light);
+  --color-accent: var(--accent);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-maroon: var(--maroon);
+  --color-gold: var(--gold);
+  --color-cream: var(--cream);
+  --color-terracotta: var(--terracotta);
+  --color-forest: var(--forest);
+  --color-sunset-orange: var(--sunset-orange);
+  --color-sunset-yellow: var(--sunset-yellow);
+  --font-sans: var(--font-manrope);
+  --font-sinhala: var(--font-noto-sinhala);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Bottom tab bar spacing */
+main {
+  padding-bottom: 5rem;
 }

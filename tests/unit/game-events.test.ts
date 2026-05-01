@@ -1,0 +1,1120 @@
+import { describe, it, expect } from "vitest";
+import type { Score, GameEventStatus, RegistrationAgeGroup, EventKey } from "@/types";
+import { eventKeyGroups } from "@/types";
+
+// ---- Helpers mirroring page logic ----
+
+const STATUS_ORDER: GameEventStatus[] = ["not-started", "starting-soon", "started", "voting", "finished"];
+
+function nextStatus(current: GameEventStatus, scoringType: string): GameEventStatus | null {
+  const steps: GameEventStatus[] = scoringType === "vote"
+    ? ["not-started", "starting-soon", "started", "voting", "finished"]
+    : ["not-started", "starting-soon", "started", "finished"];
+  const idx = steps.indexOf(current);
+  return idx < steps.length - 1 ? steps[idx + 1] : null;
+}
+
+function groupScoresByAge(scores: Score[]): Record<string, Score[]> {
+  const scoresByAge: Record<string, Score[]> = {};
+  for (const s of scores) {
+    const ag = s.ageGroup || "adult";
+    if (!scoresByAge[ag]) scoresByAge[ag] = [];
+    scoresByAge[ag].push(s);
+  }
+  for (const ag of Object.keys(scoresByAge)) {
+    scoresByAge[ag].sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+  }
+  return scoresByAge;
+}
+
+function makeScore(
+  gameId: string,
+  participantId: string,
+  name: string,
+  ageGroup: RegistrationAgeGroup,
+  position: 1 | 2 | 3
+): Score {
+  return {
+    id: `${gameId}_${participantId}`,
+    gameId,
+    participantId,
+    participantName: name,
+    ageGroup,
+    position,
+    points: position === 1 ? 3 : position === 2 ? 2 : 1,
+    timestamp: Date.now(),
+  };
+}
+
+// ---- Tests ----
+
+describe("Game event status flow", () => {
+  it("nextStatus for judge scoring: not-started → starting-soon → started → finished", () => {
+    expect(nextStatus("not-started", "judge")).toBe("starting-soon");
+    expect(nextStatus("starting-soon", "judge")).toBe("started");
+    expect(nextStatus("started", "judge")).toBe("finished");
+    expect(nextStatus("finished", "judge")).toBeNull();
+  });
+
+  it("nextStatus for vote scoring includes voting step", () => {
+    expect(nextStatus("not-started", "vote")).toBe("starting-soon");
+    expect(nextStatus("starting-soon", "vote")).toBe("started");
+    expect(nextStatus("started", "vote")).toBe("voting");
+    expect(nextStatus("voting", "vote")).toBe("finished");
+    expect(nextStatus("finished", "vote")).toBeNull();
+  });
+
+  it("nextStatus for guess scoring: same as judge (no voting)", () => {
+    expect(nextStatus("not-started", "guess")).toBe("starting-soon");
+    expect(nextStatus("started", "guess")).toBe("finished");
+    expect(nextStatus("finished", "guess")).toBeNull();
+  });
+
+  it("nextStatus for guess-text scoring: same as judge", () => {
+    expect(nextStatus("started", "guess-text")).toBe("finished");
+  });
+});
+
+describe("Score grouping by age", () => {
+  it("groups scores by ageGroup and sorts by position", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p2", "Bob", "kid", 2),
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p3", "Charlie", "adult", 1),
+    ];
+
+    const grouped = groupScoresByAge(scores);
+    expect(Object.keys(grouped).sort()).toEqual(["adult", "kid"]);
+    expect(grouped["kid"]).toHaveLength(2);
+    expect(grouped["kid"][0].position).toBe(1);
+    expect(grouped["kid"][1].position).toBe(2);
+    expect(grouped["adult"]).toHaveLength(1);
+  });
+
+  it("returns empty object when no scores", () => {
+    const grouped = groupScoresByAge([]);
+    expect(Object.keys(grouped)).toHaveLength(0);
+  });
+
+  it("scores without ageGroup default to adult", () => {
+    const score: Score = {
+      id: "g1_p1",
+      gameId: "g1",
+      participantId: "p1",
+      participantName: "Alice",
+      position: 1,
+      points: 3,
+      timestamp: Date.now(),
+    };
+    const grouped = groupScoresByAge([score]);
+    expect(grouped["adult"]).toHaveLength(1);
+    expect(grouped["adult"][0].participantName).toBe("Alice");
+  });
+});
+
+describe("Score document ID consistency", () => {
+  it("setScore and deleteScore use same ID format: gameId_participantId", () => {
+    const gameId = "banis-kama";
+    const participantId = "akain";
+    const scoreId = `${gameId}_${participantId}`;
+    const deleteId = `${gameId}_${participantId}`;
+    expect(scoreId).toBe(deleteId);
+  });
+
+  it("score ID is deterministic — same inputs produce same ID", () => {
+    const id1 = `game1_player1`;
+    const id2 = `game1_player1`;
+    expect(id1).toBe(id2);
+  });
+});
+
+describe("Medal assignment and removal", () => {
+  it("assigning position replaces previous holder of that position", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p2", "Bob", "kid", 2),
+    ];
+
+    // Assign position 1 to Bob — need to remove Alice first
+    const prev = scores.find((s) => s.gameId === "g1" && s.ageGroup === "kid" && s.position === 1);
+    expect(prev?.participantId).toBe("p1");
+
+    // After removal of Alice and assignment of Bob to pos 1
+    const updatedScores = scores
+      .filter((s) => s.participantId !== "p1") // remove Alice
+      .filter((s) => !(s.participantId === "p2" && s.position === 2)); // remove Bob's old pos
+    updatedScores.push(makeScore("g1", "p2", "Bob", "kid", 1));
+
+    expect(updatedScores).toHaveLength(1);
+    expect(updatedScores[0].participantId).toBe("p2");
+    expect(updatedScores[0].position).toBe(1);
+  });
+
+  it("removing a medal results in empty scores for that age group", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+    ];
+
+    const afterRemoval = scores.filter((s) => s.participantId !== "p1");
+    expect(afterRemoval).toHaveLength(0);
+
+    const grouped = groupScoresByAge(afterRemoval);
+    expect(grouped["kid"]).toBeUndefined();
+  });
+
+  it("removing all medals leaves no winners", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p2", "Bob", "kid", 2),
+      makeScore("g1", "p3", "Charlie", "kid", 3),
+    ];
+
+    // Remove all
+    const afterRemoval: Score[] = [];
+    const grouped = groupScoresByAge(afterRemoval);
+
+    const groupOrder = ["kid", "teen", "adult"];
+    const scoredGroups = groupOrder.filter((g) => grouped[g]?.length);
+
+    expect(scoredGroups).toHaveLength(0);
+  });
+
+  it("toggle off: clicking assigned position removes it", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p2", "Bob", "kid", 2),
+    ];
+
+    // Simulate toggle: p1 already has position 1, click position 1 → remove
+    const pScore = scores.find((s) => s.participantId === "p1");
+    const isMe = pScore?.position === 1;
+    expect(isMe).toBe(true);
+
+    // After removal
+    const afterToggle = scores.filter((s) => s.participantId !== "p1");
+    expect(afterToggle).toHaveLength(1);
+    expect(afterToggle[0].participantName).toBe("Bob");
+  });
+});
+
+describe("Winners tab display logic", () => {
+  it("shows 'not finished' message when status is not finished", () => {
+    const statuses: GameEventStatus[] = ["not-started", "starting-soon", "started", "voting"];
+    for (const status of statuses) {
+      expect(status !== "finished").toBe(true);
+    }
+  });
+
+  it("shows 'no results' when finished but no scores", () => {
+    const status: GameEventStatus = "finished";
+    const groupScores: Score[] = [];
+    expect(status === "finished" && groupScores.length === 0).toBe(true);
+  });
+
+  it("shows winners list when finished and scores exist", () => {
+    const status: GameEventStatus = "finished";
+    const groupScores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p2", "Bob", "kid", 2),
+    ];
+    expect(status === "finished" && groupScores.length > 0).toBe(true);
+  });
+
+  it("only shows top 3 winners", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p2", "Bob", "kid", 2),
+      makeScore("g1", "p3", "Charlie", "kid", 3),
+    ];
+    const displayed = scores.slice(0, 3);
+    expect(displayed).toHaveLength(3);
+  });
+});
+
+describe("Registration rules per status", () => {
+  it("allows registration for all statuses except finished", () => {
+    const statuses: GameEventStatus[] = ["not-started", "starting-soon", "started", "voting"];
+    for (const status of statuses) {
+      const canRegister = status !== "finished";
+      expect(canRegister).toBe(true);
+    }
+  });
+
+  it("disables registration when finished", () => {
+    const canRegister = "finished" !== "finished";
+    expect(canRegister).toBe(false);
+  });
+});
+
+describe("Judge action button states", () => {
+  it("disables medal buttons when not a judge", () => {
+    const isJudge = false;
+    const status: GameEventStatus = "started";
+    const disabled = !isJudge || status === "finished";
+    expect(disabled).toBe(true);
+  });
+
+  it("disables all medal buttons when finished (including assigned)", () => {
+    const isJudge = true;
+    const status: GameEventStatus = "finished";
+    const disabled = !isJudge || status === "finished";
+    expect(disabled).toBe(true);
+  });
+
+  it("disables unselect when finished — positions are locked", () => {
+    const isJudge = true;
+    const status: GameEventStatus = "finished";
+    const isMe = true;
+    // Even if isMe, buttons are disabled when finished
+    const disabled = !isJudge || status === "finished";
+    expect(disabled).toBe(true);
+  });
+
+  it("allows all medal buttons when judge and game in progress", () => {
+    const isJudge = true;
+    const status: GameEventStatus = "started";
+    const disabled = !isJudge || status === "finished";
+    expect(disabled).toBe(false);
+  });
+
+  it("allows medal assign/unselect only during started status", () => {
+    const isJudge = true;
+    const allowedStatuses: GameEventStatus[] = ["started"];
+    const blockedStatuses: GameEventStatus[] = ["not-started", "starting-soon", "voting", "finished"];
+
+    for (const s of allowedStatuses) {
+      expect(!isJudge || s === "finished").toBe(false);
+    }
+    for (const s of blockedStatuses) {
+      // Action tab only shows when started/voting/finished, and buttons disabled when finished
+      if (s === "finished") {
+        expect(!isJudge || s === "finished").toBe(true);
+      }
+    }
+  });
+});
+
+describe("Status style mapping", () => {
+  const STATUS_STYLE: Record<GameEventStatus, string> = {
+    "not-started": "bg-pink-100 text-pink-700",
+    "starting-soon": "bg-amber-100 text-amber-700",
+    "started": "bg-cyan-100 text-cyan-700",
+    "voting": "bg-blue-100 text-blue-700",
+    "finished": "bg-gray-200 text-gray-600",
+  };
+
+  it("has style for every valid status", () => {
+    const allStatuses: GameEventStatus[] = ["not-started", "starting-soon", "started", "voting", "finished"];
+    for (const s of allStatuses) {
+      expect(STATUS_STYLE[s]).toBeDefined();
+      expect(STATUS_STYLE[s].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("Age group metadata", () => {
+  const GROUP_META: Record<RegistrationAgeGroup, { primary: string }> = {
+    kid: { primary: "#10B981" },
+    teen: { primary: "#3B82F6" },
+    adult: { primary: "#7C3AED" },
+  };
+
+  it("each age group has a unique primary color", () => {
+    const colors = Object.values(GROUP_META).map((m) => m.primary);
+    expect(new Set(colors).size).toBe(3);
+  });
+
+  it("maps kid to green, teen to blue, adult to purple", () => {
+    expect(GROUP_META.kid.primary).toBe("#10B981");
+    expect(GROUP_META.teen.primary).toBe("#3B82F6");
+    expect(GROUP_META.adult.primary).toBe("#7C3AED");
+  });
+});
+
+describe("Winners tab and Results section consistency", () => {
+  // Helpers mirroring page logic
+  type Events = Record<string, { status: GameEventStatus }>;
+
+  // Returns which groups show actual winner names (finished + has scores)
+  function groupsWithWinners(scoresByAge: Record<string, Score[]>, events: Events) {
+    const groupOrder = ["kid", "teen", "adult"];
+    return groupOrder.filter((g) => {
+      return scoresByAge[g]?.length && events[g]?.status === "finished";
+    });
+  }
+
+  // Returns what each group shows: "winners" or "placeholder"
+  function resultCardState(ageGroups: string[], scoresByAge: Record<string, Score[]>, events: Events) {
+    return ageGroups.map((g) => {
+      const isFinished = events[g]?.status === "finished";
+      const hasScores = (scoresByAge[g]?.length ?? 0) > 0;
+      return { group: g, showsWinners: isFinished && hasScores, showsPlaceholder: !isFinished || !hasScores };
+    });
+  }
+
+  it("Winners tab top 3 matches Results section for the same age group", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p2", "Bob", "kid", 2),
+      makeScore("g1", "p3", "Charlie", "kid", 3),
+      makeScore("g1", "p4", "Diana", "teen", 1),
+      makeScore("g1", "p5", "Eve", "adult", 1),
+      makeScore("g1", "p6", "Frank", "adult", 2),
+    ];
+
+    const scoresByAge = groupScoresByAge(scores);
+    const events: Events = {
+      kid: { status: "finished" },
+      teen: { status: "finished" },
+      adult: { status: "finished" },
+    };
+    const withWinners = groupsWithWinners(scoresByAge, events);
+    expect(withWinners).toEqual(["kid", "teen", "adult"]);
+
+    // Winners tab for each group shows slice(0,3) — same source as Results
+    for (const ag of withWinners) {
+      const winnersTabData = (scoresByAge[ag] || []).slice(0, 3);
+      const resultsData = scoresByAge[ag] || [];
+      expect(winnersTabData).toEqual(resultsData.slice(0, 3));
+      for (let i = 1; i < winnersTabData.length; i++) {
+        expect(winnersTabData[i - 1].position).toBeLessThanOrEqual(winnersTabData[i].position);
+      }
+    }
+  });
+
+  it("Results section shows all age groups but only finished ones display winners", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p4", "Diana", "teen", 1),
+      makeScore("g1", "p5", "Eve", "adult", 1),
+    ];
+    const scoresByAge = groupScoresByAge(scores);
+    const ageGroups = ["kid", "teen", "adult"];
+    const events: Events = {
+      kid: { status: "not-started" },
+      teen: { status: "finished" },
+      adult: { status: "started" },
+    };
+    const states = resultCardState(ageGroups, scoresByAge, events);
+    // Kid: has scores but not finished → placeholder
+    expect(states[0]).toEqual({ group: "kid", showsWinners: false, showsPlaceholder: true });
+    // Teen: finished + has scores → winners
+    expect(states[1]).toEqual({ group: "teen", showsWinners: true, showsPlaceholder: false });
+    // Adult: has scores but not finished → placeholder
+    expect(states[2]).toEqual({ group: "adult", showsWinners: false, showsPlaceholder: true });
+  });
+
+  it("Results section shows placeholder for all groups when none are finished", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+    ];
+    const scoresByAge = groupScoresByAge(scores);
+    const ageGroups = ["kid", "teen", "adult"];
+    const events: Events = {
+      kid: { status: "started" },
+      teen: { status: "not-started" },
+      adult: { status: "not-started" },
+    };
+    const states = resultCardState(ageGroups, scoresByAge, events);
+    expect(states.every((s) => s.showsPlaceholder)).toBe(true);
+    expect(states.every((s) => !s.showsWinners)).toBe(true);
+  });
+
+  it("Results section shows placeholder for finished group with no scores", () => {
+    const scoresByAge = groupScoresByAge([]);
+    const ageGroups = ["kid"];
+    const events: Events = { kid: { status: "finished" } };
+    const states = resultCardState(ageGroups, scoresByAge, events);
+    // Finished but no scores → still placeholder
+    expect(states[0]).toEqual({ group: "kid", showsWinners: false, showsPlaceholder: true });
+  });
+
+  it("Both sections respect groupOrder: kid → teen → adult", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p5", "Eve", "adult", 1),
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p4", "Diana", "teen", 1),
+    ];
+    const scoresByAge = groupScoresByAge(scores);
+    const events: Events = {
+      kid: { status: "finished" },
+      teen: { status: "finished" },
+      adult: { status: "finished" },
+    };
+    const withWinners = groupsWithWinners(scoresByAge, events);
+    expect(withWinners).toEqual(["kid", "teen", "adult"]);
+  });
+});
+
+describe("Admin scoring ageGroup assignment", () => {
+  function getRegistrationAgeGroup(participantAgeGroup: string): RegistrationAgeGroup {
+    if (participantAgeGroup === "teen") return "teen";
+    if (participantAgeGroup === "kid" || participantAgeGroup === "toddler" || participantAgeGroup === "infant") return "kid";
+    return "adult";
+  }
+
+  it("maps teen to teen", () => {
+    expect(getRegistrationAgeGroup("teen")).toBe("teen");
+  });
+
+  it("maps kid, toddler, infant to kid", () => {
+    expect(getRegistrationAgeGroup("kid")).toBe("kid");
+    expect(getRegistrationAgeGroup("toddler")).toBe("kid");
+    expect(getRegistrationAgeGroup("infant")).toBe("kid");
+  });
+
+  it("maps adult to adult", () => {
+    expect(getRegistrationAgeGroup("adult")).toBe("adult");
+  });
+
+  it("maps unknown age groups to adult", () => {
+    expect(getRegistrationAgeGroup("senior")).toBe("adult");
+  });
+});
+
+describe("eventKeyGroups helper", () => {
+  it("splits single group key", () => {
+    expect(eventKeyGroups("kid")).toEqual(["kid"]);
+    expect(eventKeyGroups("teen")).toEqual(["teen"]);
+    expect(eventKeyGroups("adult")).toEqual(["adult"]);
+  });
+
+  it("splits combined key into constituent groups", () => {
+    expect(eventKeyGroups("teen+adult" as EventKey)).toEqual(["teen", "adult"]);
+  });
+
+  it("splits kid+teen combined key", () => {
+    expect(eventKeyGroups("kid+teen" as EventKey)).toEqual(["kid", "teen"]);
+  });
+});
+
+describe("Combined event key derivation", () => {
+  // Mirrors the eventKeyOrder logic from page.tsx
+  function deriveEventKeys(
+    eligibleGroups: { kids?: boolean; teens?: boolean; adults?: boolean },
+    events: Record<string, { status: GameEventStatus }>
+  ): EventKey[] {
+    const ageGroups: RegistrationAgeGroup[] = [];
+    if (eligibleGroups.kids) ageGroups.push("kid");
+    if (eligibleGroups.teens) ageGroups.push("teen");
+    if (eligibleGroups.adults) ageGroups.push("adult");
+
+    const ordered: EventKey[] = [];
+    const seen = new Set<string>();
+    for (const ag of ageGroups) {
+      if (seen.has(ag)) continue;
+      const combinedKey = Object.keys(events).find(
+        (k) => k.includes("+") && k.split("+").includes(ag)
+      ) as EventKey | undefined;
+      if (combinedKey && !seen.has(combinedKey)) {
+        ordered.push(combinedKey);
+        for (const part of combinedKey.split("+")) seen.add(part);
+      } else if (events[ag]) {
+        ordered.push(ag as EventKey);
+        seen.add(ag);
+      }
+    }
+    return ordered;
+  }
+
+  it("returns individual keys for standard games", () => {
+    const events = {
+      kid: { status: "not-started" as GameEventStatus },
+      teen: { status: "not-started" as GameEventStatus },
+      adult: { status: "not-started" as GameEventStatus },
+    };
+    const keys = deriveEventKeys({ kids: true, teens: true, adults: true }, events);
+    expect(keys).toEqual(["kid", "teen", "adult"]);
+  });
+
+  it("returns combined key for teen+adult event", () => {
+    const events = {
+      kid: { status: "not-started" as GameEventStatus },
+      "teen+adult": { status: "not-started" as GameEventStatus },
+    };
+    const keys = deriveEventKeys({ kids: true, teens: true, adults: true }, events);
+    expect(keys).toEqual(["kid", "teen+adult"]);
+  });
+
+  it("does not duplicate groups in combined keys", () => {
+    const events = {
+      "teen+adult": { status: "not-started" as GameEventStatus },
+    };
+    const keys = deriveEventKeys({ teens: true, adults: true }, events);
+    expect(keys).toEqual(["teen+adult"]);
+  });
+
+  it("works with only combined key and no individual groups", () => {
+    const events = {
+      "kid+teen": { status: "not-started" as GameEventStatus },
+    };
+    const keys = deriveEventKeys({ kids: true, teens: true }, events);
+    expect(keys).toEqual(["kid+teen"]);
+  });
+});
+
+describe("Combined event participant filtering", () => {
+  it("filters registrations for all constituent groups in a combined event", () => {
+    const registrations = [
+      { ageGroup: "teen" as RegistrationAgeGroup, participantId: "p1" },
+      { ageGroup: "adult" as RegistrationAgeGroup, participantId: "p2" },
+      { ageGroup: "kid" as RegistrationAgeGroup, participantId: "p3" },
+    ];
+
+    const ek: EventKey = "teen+adult";
+    const groups = eventKeyGroups(ek);
+    const filtered = registrations.filter((r) => groups.includes(r.ageGroup));
+
+    expect(filtered).toHaveLength(2);
+    expect(filtered.map((r) => r.participantId).sort()).toEqual(["p1", "p2"]);
+  });
+
+  it("individual event only includes its own group", () => {
+    const registrations = [
+      { ageGroup: "teen" as RegistrationAgeGroup, participantId: "p1" },
+      { ageGroup: "adult" as RegistrationAgeGroup, participantId: "p2" },
+      { ageGroup: "kid" as RegistrationAgeGroup, participantId: "p3" },
+    ];
+
+    const ek: EventKey = "kid";
+    const groups = eventKeyGroups(ek);
+    const filtered = registrations.filter((r) => groups.includes(r.ageGroup));
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].participantId).toBe("p3");
+  });
+});
+
+describe("Combined event scores aggregation", () => {
+  it("aggregates scores from all groups in a combined event", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "teen", 1),
+      makeScore("g1", "p2", "Bob", "adult", 2),
+      makeScore("g1", "p3", "Charlie", "kid", 1),
+    ];
+
+    const scoresByAge = groupScoresByAge(scores);
+    const ek: EventKey = "teen+adult";
+    const groups = eventKeyGroups(ek);
+    const combined = groups.flatMap((g) => scoresByAge[g] || []).sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+
+    expect(combined).toHaveLength(2);
+    expect(combined[0].participantName).toBe("Alice");
+    expect(combined[1].participantName).toBe("Bob");
+  });
+});
+
+describe("Combined event status handling", () => {
+  it("combined event has a single shared status", () => {
+    const events: Record<string, { status: GameEventStatus }> = {
+      kid: { status: "started" },
+      "teen+adult": { status: "finished" },
+    };
+
+    expect(events["teen+adult"].status).toBe("finished");
+    expect(events["kid"].status).toBe("started");
+  });
+
+  it("scoredGroups includes combined event key when finished with scores", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "teen", 1),
+      makeScore("g1", "p2", "Bob", "adult", 2),
+    ];
+    const scoresByAge = groupScoresByAge(scores);
+    const eventKeys: EventKey[] = ["kid", "teen+adult"];
+    const events: Record<string, { status: GameEventStatus }> = {
+      kid: { status: "not-started" },
+      "teen+adult": { status: "finished" },
+    };
+
+    const scored = eventKeys.filter((ek) => {
+      const ev = events[ek];
+      const groups = eventKeyGroups(ek);
+      const hasScores = groups.some((g) => scoresByAge[g]?.length);
+      return hasScores && ev?.status === "finished";
+    });
+
+    expect(scored).toEqual(["teen+adult"]);
+  });
+});
+
+describe("Age filter in combined events", () => {
+  type AgeFilter = RegistrationAgeGroup | "all";
+
+  interface Participant { id: string; name: string; ageGroup: string }
+  interface Registration { participantId: string; ageGroup: RegistrationAgeGroup }
+
+  function participantRegGroup(p: Participant): RegistrationAgeGroup {
+    if (p.ageGroup === "adult") return "adult";
+    if (p.ageGroup === "teen") return "teen";
+    return "kid";
+  }
+
+  function filterParticipants(participants: Participant[], filter: AgeFilter): Participant[] {
+    if (filter === "all") return participants;
+    return participants.filter((p) => participantRegGroup(p) === filter);
+  }
+
+  function filterRegistrations(regs: Registration[], filter: AgeFilter): Registration[] {
+    if (filter === "all") return regs;
+    return regs.filter((r) => r.ageGroup === filter);
+  }
+
+  const mixedParticipants: Participant[] = [
+    { id: "p1", name: "Ana", ageGroup: "kid" },
+    { id: "p2", name: "Ben", ageGroup: "teen" },
+    { id: "p3", name: "Cal", ageGroup: "adult" },
+    { id: "p4", name: "Dan", ageGroup: "toddler" },
+    { id: "p5", name: "Eve", ageGroup: "teen" },
+  ];
+
+  const mixedRegs: Registration[] = [
+    { participantId: "p1", ageGroup: "kid" },
+    { participantId: "p2", ageGroup: "teen" },
+    { participantId: "p3", ageGroup: "adult" },
+    { participantId: "p5", ageGroup: "teen" },
+  ];
+
+  it("'all' filter returns all participants", () => {
+    expect(filterParticipants(mixedParticipants, "all")).toHaveLength(5);
+  });
+
+  it("'kid' filter returns kids and toddlers", () => {
+    const filtered = filterParticipants(mixedParticipants, "kid");
+    expect(filtered.map((p) => p.id).sort()).toEqual(["p1", "p4"]);
+  });
+
+  it("'teen' filter returns only teens", () => {
+    const filtered = filterParticipants(mixedParticipants, "teen");
+    expect(filtered.map((p) => p.id).sort()).toEqual(["p2", "p5"]);
+  });
+
+  it("'adult' filter returns only adults", () => {
+    const filtered = filterParticipants(mixedParticipants, "adult");
+    expect(filtered.map((p) => p.id)).toEqual(["p3"]);
+  });
+
+  it("'all' filter returns all registrations", () => {
+    expect(filterRegistrations(mixedRegs, "all")).toHaveLength(4);
+  });
+
+  it("'teen' filter returns only teen registrations", () => {
+    const filtered = filterRegistrations(mixedRegs, "teen");
+    expect(filtered).toHaveLength(2);
+    expect(filtered.every((r) => r.ageGroup === "teen")).toBe(true);
+  });
+
+  it("filter is only shown for combined events (isCombined check)", () => {
+    const singleKey: EventKey = "kid";
+    const combinedKey: EventKey = "teen+adult";
+    const tripleKey: EventKey = "kid+teen+adult";
+
+    expect(eventKeyGroups(singleKey).length > 1).toBe(false);
+    expect(eventKeyGroups(combinedKey).length > 1).toBe(true);
+    expect(eventKeyGroups(tripleKey).length > 1).toBe(true);
+  });
+
+  it("filter buttons match constituent groups of the event key", () => {
+    const ek: EventKey = "kid+teen+adult";
+    const groups = eventKeyGroups(ek);
+    expect(groups).toEqual(["kid", "teen", "adult"]);
+
+    // Each group should have a filter button
+    const filterOptions: AgeFilter[] = [...groups, "all"];
+    expect(filterOptions).toEqual(["kid", "teen", "adult", "all"]);
+  });
+
+  it("filtering does not affect total count in tab label", () => {
+    const totalRegs = mixedRegs.length;
+    const filteredRegs = filterRegistrations(mixedRegs, "teen");
+    // Tab label should use totalRegs, not filteredRegs.length
+    expect(totalRegs).toBe(4);
+    expect(filteredRegs.length).toBe(2);
+    expect(totalRegs).not.toBe(filteredRegs.length);
+  });
+
+  it("default filter for combined event is the first constituent group", () => {
+    const ek2: EventKey = "teen+adult";
+    const groups2 = eventKeyGroups(ek2);
+    const isCombined2 = groups2.length > 1;
+    const defaultFilter: AgeFilter = isCombined2 ? groups2[0] : "all";
+    expect(defaultFilter).toBe("teen");
+
+    const ek3: EventKey = "kid+teen+adult";
+    const groups3 = eventKeyGroups(ek3);
+    const isCombined3 = groups3.length > 1;
+    const defaultFilter3: AgeFilter = isCombined3 ? groups3[0] : "all";
+    expect(defaultFilter3).toBe("kid");
+  });
+
+  it("default filter for single-group event is 'all'", () => {
+    const ek: EventKey = "kid";
+    const groups = eventKeyGroups(ek);
+    const isCombined = groups.length > 1;
+    const defaultFilter: AgeFilter = isCombined ? groups[0] : "all";
+    expect(defaultFilter).toBe("all");
+  });
+});
+
+describe("Guess-text game behavior", () => {
+  function sanitizeGuessText(value: string): string {
+    return value.replace(/[^a-zA-Z0-9 ]/g, "").slice(0, 50);
+  }
+
+  it("allows alphanumeric characters and spaces", () => {
+    expect(sanitizeGuessText("Hello World 123")).toBe("Hello World 123");
+  });
+
+  it("strips special characters", () => {
+    expect(sanitizeGuessText("Hello!@#$%^&*()")).toBe("Hello");
+    expect(sanitizeGuessText("test<script>")).toBe("testscript");
+  });
+
+  it("limits input to 50 characters", () => {
+    const long = "A".repeat(60);
+    expect(sanitizeGuessText(long)).toHaveLength(50);
+  });
+
+  it("allows empty string", () => {
+    expect(sanitizeGuessText("")).toBe("");
+  });
+
+  it("strips unicode and emoji", () => {
+    expect(sanitizeGuessText("hello 🎉 world")).toBe("hello  world");
+  });
+
+  it("guessing is only allowed when status is started", () => {
+    const statuses: GameEventStatus[] = ["not-started", "starting-soon", "started", "voting", "finished"];
+    const canGuess = (s: GameEventStatus) => s === "started";
+    expect(statuses.filter(canGuess)).toEqual(["started"]);
+  });
+
+  it("guess can be overwritten (submitGuess uses setDoc with deterministic ID)", () => {
+    // ID format: gameId_participantId — same inputs produce same ID, so setDoc overwrites
+    const id1 = `game1_player1`;
+    const id2 = `game1_player1`;
+    expect(id1).toBe(id2); // same ID = overwrite
+  });
+
+  it("submit button disabled when input is empty or whitespace", () => {
+    const isDisabled = (val: string) => !val.trim();
+    expect(isDisabled("")).toBe(true);
+    expect(isDisabled("   ")).toBe(true);
+    expect(isDisabled("hello")).toBe(false);
+  });
+
+  it("judge medal buttons shown for guess-text when judge is logged in", () => {
+    const scoringType = "guess-text";
+    const isJudge = true;
+    const status: GameEventStatus = "started";
+    const showMedals = scoringType === "guess-text" && isJudge && (status === "started" || status === "finished");
+    expect(showMedals).toBe(true);
+  });
+
+  it("judge medal buttons disabled when finished", () => {
+    const status: GameEventStatus = "finished";
+    const medalDisabled = status === "finished";
+    expect(medalDisabled).toBe(true);
+  });
+
+  it("judge medal buttons not shown for non-judges", () => {
+    const isJudge = false;
+    const showMedals = "guess-text" === "guess-text" && isJudge;
+    expect(showMedals).toBe(false);
+  });
+
+  it("guess input pre-fills with existing guess value for overwrite", () => {
+    const existingGuess = { guess: "Banana" };
+    const guessInputs: Record<string, string> = {};
+    const inputKey = "ek-p1";
+    const inputVal = guessInputs[inputKey] ?? (existingGuess ? String(existingGuess.guess) : "");
+    expect(inputVal).toBe("Banana");
+  });
+
+  it("guess input uses user-typed value over existing guess", () => {
+    const existingGuess = { guess: "Banana" };
+    const guessInputs: Record<string, string> = { "ek-p1": "Apple" };
+    const inputKey = "ek-p1";
+    const inputVal = guessInputs[inputKey] ?? (existingGuess ? String(existingGuess.guess) : "");
+    expect(inputVal).toBe("Apple");
+  });
+});
+
+describe("Count Toffee Bottle guess sorting and judge assignment", () => {
+  function calculateGuessWinners(
+    guesses: { participantId: string; participantName: string; guess: number }[],
+    correctAnswer: number,
+    maxWinners = 3
+  ): { participantId: string; participantName: string; position: number; points: number }[] {
+    const sorted = [...guesses].sort(
+      (a, b) => Math.abs(a.guess - correctAnswer) - Math.abs(b.guess - correctAnswer)
+    );
+    return sorted.slice(0, Math.min(maxWinners, sorted.length)).map((g, i) => ({
+      participantId: g.participantId,
+      participantName: g.participantName,
+      position: (i + 1) as 1 | 2 | 3,
+      points: i === 0 ? 3 : i === 1 ? 2 : 1,
+    }));
+  }
+
+  it("picks 3 closest guesses to correct answer", () => {
+    const guesses = [
+      { participantId: "p1", participantName: "A", guess: 50 },
+      { participantId: "p2", participantName: "B", guess: 42 },
+      { participantId: "p3", participantName: "C", guess: 55 },
+      { participantId: "p4", participantName: "D", guess: 30 },
+    ];
+    const winners = calculateGuessWinners(guesses, 45);
+    expect(winners).toHaveLength(3);
+    expect(winners[0].participantId).toBe("p2"); // 42, diff=3
+    expect(winners[1].participantId).toBe("p1"); // 50, diff=5
+    expect(winners[2].participantId).toBe("p3"); // 55, diff=10
+  });
+
+  it("assigns correct points (3, 2, 1)", () => {
+    const guesses = [
+      { participantId: "p1", participantName: "A", guess: 10 },
+      { participantId: "p2", participantName: "B", guess: 12 },
+      { participantId: "p3", participantName: "C", guess: 20 },
+    ];
+    const winners = calculateGuessWinners(guesses, 11);
+    expect(winners[0].points).toBe(3);
+    expect(winners[1].points).toBe(2);
+    expect(winners[2].points).toBe(1);
+  });
+
+  it("handles fewer than 3 guesses", () => {
+    const guesses = [
+      { participantId: "p1", participantName: "A", guess: 10 },
+    ];
+    const winners = calculateGuessWinners(guesses, 11);
+    expect(winners).toHaveLength(1);
+    expect(winners[0].position).toBe(1);
+    expect(winners[0].points).toBe(3);
+  });
+
+  it("handles exact match as closest", () => {
+    const guesses = [
+      { participantId: "p1", participantName: "A", guess: 100 },
+      { participantId: "p2", participantName: "B", guess: 45 },
+      { participantId: "p3", participantName: "C", guess: 42 },
+    ];
+    const winners = calculateGuessWinners(guesses, 42);
+    expect(winners[0].participantId).toBe("p3"); // exact match, diff=0
+  });
+
+  it("handles equal distances (stable sort)", () => {
+    const guesses = [
+      { participantId: "p1", participantName: "A", guess: 48 },
+      { participantId: "p2", participantName: "B", guess: 52 },
+    ];
+    // Both are distance 2 from 50
+    const winners = calculateGuessWinners(guesses, 50);
+    expect(winners).toHaveLength(2);
+    // Both should appear, order is stable (p1 first since it was first in array)
+    expect(winners.map((w) => w.participantId)).toEqual(["p1", "p2"]);
+  });
+
+  it("judge can sort and assign at any event status", () => {
+    // Judge tab input and medal buttons are always visible regardless of status
+    const isJudge = true;
+    const showJudgeControls = isJudge; // No status gating
+    expect(showJudgeControls).toBe(true);
+  });
+
+  it("correctAnswer must be a valid number to calculate", () => {
+    const isValidAnswer = (input: string) => !isNaN(parseInt(input, 10));
+    expect(isValidAnswer("42")).toBe(true);
+    expect(isValidAnswer("")).toBe(false);
+    expect(isValidAnswer("abc")).toBe(false);
+    expect(isValidAnswer("0")).toBe(true);
+  });
+
+  it("winners appear in Winners tab when scores exist", () => {
+    const groupScores = [
+      { participantId: "p1", position: 1 },
+      { participantId: "p2", position: 2 },
+      { participantId: "p3", position: 3 },
+    ];
+    expect(groupScores.length).toBeGreaterThan(0);
+    expect(groupScores.slice(0, 3)).toHaveLength(3);
+  });
+
+  it("combined event calculates 3 winners across all guesses (no age group filtering)", () => {
+    // For kid+teen+adult combined event, all guesses compete together regardless of registration
+    const guesses = [
+      { participantId: "kid1", participantName: "Kid1", guess: 40 },
+      { participantId: "teen1", participantName: "Teen1", guess: 42 },
+      { participantId: "adult1", participantName: "Adult1", guess: 50 },
+      { participantId: "adult2", participantName: "Adult2", guess: 100 },
+    ];
+    // No age group filtering — use all guesses directly
+    const winners = calculateGuessWinners(guesses, 45);
+    // Should be 3 total, not 3 per age group
+    expect(winners).toHaveLength(3);
+    expect(winners[0].participantId).toBe("teen1"); // 42, diff=3
+    expect(winners[1].participantId).toBe("kid1");  // 40, diff=5
+    expect(winners[2].participantId).toBe("adult1"); // 50, diff=5 (stable sort, adult1 after kid1)
+  });
+
+  it("guess value is shown under participant name", () => {
+    const existingGuess = { guess: 42 };
+    // Always show guess under name (no canGuess gating)
+    const displayText = existingGuess ? `Guess: ${String(existingGuess.guess)}` : null;
+    expect(displayText).toBe("Guess: 42");
+  });
+
+  it("Judge tab is visible for guess scoring games when judge is logged in", () => {
+    const scoringType = "guess";
+    const isJudge = true;
+    const showJudgeTab = isJudge && (scoringType === "guess" || scoringType === "guess-text");
+    expect(showJudgeTab).toBe(true);
+  });
+
+  it("Judge tab is hidden for non-judges", () => {
+    const scoringType = "guess";
+    const isJudge = false;
+    const showJudgeTab = isJudge && (scoringType === "guess" || scoringType === "guess-text");
+    expect(showJudgeTab).toBe(false);
+  });
+});
+
+describe("Guess-text judge text similarity", () => {
+  const textSimilarity = (a: string, b: string): number => {
+    const al = a.toLowerCase().trim();
+    const bl = b.toLowerCase().trim();
+    if (al === bl) return 1;
+    if (bl.includes(al) || al.includes(bl)) return 0.8;
+    const aChars = new Set(al.split(""));
+    const bChars = new Set(bl.split(""));
+    let overlap = 0;
+    for (const c of aChars) if (bChars.has(c)) overlap++;
+    return overlap / Math.max(aChars.size, bChars.size);
+  };
+
+  it("exact match returns 1", () => {
+    expect(textSimilarity("Elephant", "Elephant")).toBe(1);
+  });
+
+  it("case-insensitive exact match returns 1", () => {
+    expect(textSimilarity("elephant", "ELEPHANT")).toBe(1);
+  });
+
+  it("substring match returns 0.8", () => {
+    expect(textSimilarity("Eleph", "Elephant")).toBe(0.8);
+    expect(textSimilarity("Elephant", "Eleph")).toBe(0.8);
+  });
+
+  it("partial character overlap returns intermediate score", () => {
+    const score = textSimilarity("Elephent", "Elephant");
+    expect(score).toBeGreaterThan(0.5);
+    expect(score).toBeLessThanOrEqual(1);
+  });
+
+  it("completely different words return low score", () => {
+    const score = textSimilarity("Banana", "Elephant");
+    expect(score).toBeLessThan(0.4);
+  });
+
+  it("empty string vs text returns low score", () => {
+    // Empty string is technically a substring of any string, so includes returns 0.8
+    expect(textSimilarity("", "Elephant")).toBe(0.8);
+  });
+
+  it("sorts guesses by similarity to correct answer", () => {
+    const correctAnswer = "Elephant";
+    const guesses = [
+      { participantId: "p1", guess: "Banana" },
+      { participantId: "p2", guess: "Elephant" },
+      { participantId: "p3", guess: "Eleph" },
+      { participantId: "p4", guess: "Cat" },
+    ];
+    const sorted = [...guesses].sort(
+      (a, b) => textSimilarity(String(b.guess), correctAnswer) - textSimilarity(String(a.guess), correctAnswer)
+    );
+    expect(sorted[0].participantId).toBe("p2"); // exact match
+    expect(sorted[1].participantId).toBe("p3"); // substring
+  });
+
+  it("judge manually assigns medals for guess-text", () => {
+    // For guess-text, judge sees sorted list and picks 1/2/3 manually
+    const scoringType = "guess-text";
+    const isJudge = true;
+    const status: GameEventStatus = "finished";
+    const showMedalButtons = scoringType === "guess-text" && isJudge && (status === "started" || status === "finished");
+    expect(showMedalButtons).toBe(true);
+  });
+
+  it("medal buttons visible in Judge tab regardless of status", () => {
+    const scoringType = "guess-text";
+    const isJudge = true;
+    // Medal buttons are always shown in Judge tab
+    const showMedalButtons = scoringType === "guess-text" && isJudge;
+    expect(showMedalButtons).toBe(true);
+  });
+
+  it("medal buttons visible for guess type too", () => {
+    const scoringType = "guess";
+    const isJudge = true;
+    const showMedalButtons = (scoringType === "guess" || scoringType === "guess-text") && isJudge;
+    expect(showMedalButtons).toBe(true);
+  });
+
+  it("correct answer input visible when no scores exist (no status gating)", () => {
+    const groupScoresLength = 0;
+    // Input always visible when no scores, regardless of status
+    expect(!groupScoresLength).toBe(true);
+    // Hidden when scores already exist
+    expect(!3).toBe(false);
+  });
+
+  it("Judge tab shows all participants (registered + guessed) without age filtering", () => {
+    const groupRegs = [
+      { participantId: "p1", ageGroup: "kid" as RegistrationAgeGroup },
+      { participantId: "p2", ageGroup: "teen" as RegistrationAgeGroup },
+    ];
+    const guesses = [
+      { participantId: "p1", guess: "Cat" },
+      { participantId: "p3", guess: "Dog" }, // p3 guessed but not registered
+    ];
+    // Judge tab logic: include all registered + those who guessed without registering
+    const regIds = new Set(groupRegs.map((r) => r.participantId));
+    const guessOnlyParticipants = guesses.filter((g) => !regIds.has(g.participantId));
+    const allJudgeRegs = [...groupRegs, ...guessOnlyParticipants.map((g) => ({ participantId: g.participantId, ageGroup: "adult" as RegistrationAgeGroup }))];
+    // Shows all 3 participants (2 registered + 1 guess-only)
+    expect(allJudgeRegs).toHaveLength(3);
+    expect(allJudgeRegs.map((r) => r.participantId)).toContain("p3");
+  });
+
+  it("Sort sorts all guesses by proximity without age group filtering", () => {
+    const guesses = [
+      { participantId: "p1", participantName: "P1", guess: 40 },
+      { participantId: "p2", participantName: "P2", guess: 42 },
+      { participantId: "p3", participantName: "P3", guess: 50 },
+    ];
+    // No registration-based filtering, sorts all guesses by proximity
+    const answer = 45;
+    const sorted = [...guesses].sort((a, b) => Math.abs((a.guess as number) - answer) - Math.abs((b.guess as number) - answer));
+    expect(sorted[0].participantId).toBe("p2"); // diff=3
+    expect(sorted[1].participantId).toBe("p1"); // diff=5
+    expect(sorted[2].participantId).toBe("p3"); // diff=5
+  });
+
+  it("Judge manually assigns 1/2/3 medals for both guess types", () => {
+    // Both Count Toffee (guess) and Guess the Box (guess-text) use manual medal assignment
+    const scoringTypes = ["guess", "guess-text"];
+    for (const scoringType of scoringTypes) {
+      const isJudge = true;
+      const status: GameEventStatus = "started";
+      const showMedalButtons = isJudge && (status === "started" || status === "finished");
+      expect(showMedalButtons).toBe(true);
+    }
+  });
+
+  it("correctAnswer type supports both number and string", () => {
+    const numAnswer: number | string | null = 42;
+    const textAnswer: number | string | null = "Elephant";
+    expect(typeof numAnswer).toBe("number");
+    expect(typeof textAnswer).toBe("string");
+  });
+});

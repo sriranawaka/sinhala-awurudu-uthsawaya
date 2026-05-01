@@ -1,0 +1,606 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { ArrowLeft, ChevronDown, ChevronUp, Heart } from "lucide-react";
+import {
+  getGames, getScoresByGame, getRegistrationsByGame, getParticipants,
+  updateGameEventStatus, getGuessesByGame, setScore, deleteScore,
+  registerForGame, unregisterFromGame,
+  castVote, getVotesByVoter,
+  submitGuess, updateGame,
+} from "@/lib/db";
+import { onAuthChange } from "@/lib/auth";
+import { getSessionId } from "@/lib/storage";
+import { cn } from "@/lib/utils";
+import { AvatarIcon } from "@/components/avatar-icon";
+import type { Game, Score, GameRegistration, Guess, Participant, Vote, RegistrationAgeGroup, GameEventStatus, ScoringType } from "@/types";
+
+const MAX_VOTES = 3;
+
+const STATUS_FLOW: Record<ScoringType, GameEventStatus[]> = {
+  judge: ["not-started", "starting-soon", "started", "finished"],
+  vote: ["not-started", "starting-soon", "started", "voting", "finished"],
+  guess: ["not-started", "starting-soon", "started", "finished"],
+  "guess-text": ["not-started", "starting-soon", "started", "finished"],
+};
+
+function getNextStatus(current: GameEventStatus, scoringType: ScoringType): GameEventStatus | null {
+  const flow = STATUS_FLOW[scoringType];
+  const idx = flow.indexOf(current);
+  return idx < flow.length - 1 ? flow[idx + 1] : null;
+}
+
+function canRegister(status: GameEventStatus, scoringType: ScoringType): boolean {
+  if (status === "finished") return false;
+  if (scoringType === "vote" && status === "voting") return false;
+  return true;
+}
+
+export default function GameDetailPage({
+  params,
+}: {
+  params: Promise<{ gameId: string }>;
+}) {
+  const { gameId } = use(params);
+  const t = useTranslations("gameDetail");
+  const tc = useTranslations("common");
+
+  const [game, setGame] = useState<Game | null>(null);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [scores, setScores] = useState<Score[]>([]);
+  const [registrations, setRegistrations] = useState<GameRegistration[]>([]);
+  const [guesses, setGuesses] = useState<Guess[]>([]);
+  const [myVotedIds, setMyVotedIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [isJudge, setIsJudge] = useState(false);
+  const [expandedGroup, setExpandedGroup] = useState<RegistrationAgeGroup | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [voteSubmitting, setVoteSubmitting] = useState<string | null>(null);
+  const [guessInputs, setGuessInputs] = useState<Map<string, string>>(new Map());
+  const [guessSubmitting, setGuessSubmitting] = useState<string | null>(null);
+  const [correctAnswer, setCorrectAnswer] = useState("");
+  const [calculatingWinners, setCalculatingWinners] = useState(false);
+
+  useEffect(() => {
+    return onAuthChange((user) => setIsJudge(!!user));
+  }, []);
+
+  const refreshData = async () => {
+    const sessionId = getSessionId();
+    const [games, p, s, r, g, myVotes] = await Promise.all([
+      getGames(),
+      getParticipants(),
+      getScoresByGame(gameId),
+      getRegistrationsByGame(gameId).catch(() => [] as GameRegistration[]),
+      getGuessesByGame(gameId).catch(() => [] as Guess[]),
+      getVotesByVoter(gameId, sessionId).catch(() => [] as Vote[]),
+    ]);
+    const foundGame = games.find((gm) => gm.id === gameId) || null;
+    setGame(foundGame);
+    setParticipants(p);
+    setScores(s);
+    setRegistrations(r);
+    setGuesses(g);
+    setMyVotedIds(new Set(myVotes.map((v) => v.participantId)));
+    if (foundGame?.correctAnswer) setCorrectAnswer(String(foundGame.correctAnswer));
+    return foundGame;
+  };
+
+  useEffect(() => {
+    refreshData().then((foundGame) => {
+      if (foundGame?.events) {
+        const order: RegistrationAgeGroup[] = ["kid", "teen", "adult"];
+        const priority: GameEventStatus[] = ["started", "voting", "starting-soon", "not-started"];
+        for (const st of priority) {
+          const g = order.find((ag) => foundGame.events?.[ag]?.status === st);
+          if (g) { setExpandedGroup(g); break; }
+        }
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId]);
+
+  if (loading) {
+    return (
+      <main className="flex flex-col min-h-screen items-center justify-center bg-white">
+        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
+      </main>
+    );
+  }
+
+  if (!game) {
+    return (
+      <main className="flex flex-col min-h-screen items-center justify-center p-6 bg-white">
+        <p className="text-gray-400 text-sm">Game not found</p>
+        <Link href="/games" className="text-gray-900 text-sm mt-2 underline">
+          ← {t("backToGames")}
+        </Link>
+      </main>
+    );
+  }
+
+  // Build age groups
+  const ageGroups: { key: RegistrationAgeGroup; label: string; color: string; bgLight: string; textColor: string }[] = [];
+  if (game.eligibleGroups.kids)
+    ageGroups.push({ key: "kid", label: tc("kids"), color: "bg-success", bgLight: "bg-success/10", textColor: "text-success" });
+  if (game.eligibleGroups.teens)
+    ageGroups.push({ key: "teen", label: tc("teens"), color: "bg-info", bgLight: "bg-info/10", textColor: "text-info" });
+  if (game.eligibleGroups.adults)
+    ageGroups.push({ key: "adult", label: tc("adults"), color: "bg-primary", bgLight: "bg-primary/10", textColor: "text-primary" });
+
+  const groupLabels: Record<string, { label: string; solid: string }> = {
+    kid: { label: tc("kids"), solid: "bg-success" },
+    teen: { label: tc("teens"), solid: "bg-info" },
+    adult: { label: tc("adults"), solid: "bg-primary" },
+  };
+
+  // Scores by age group for results
+  const groupOrder = ["kid", "teen", "adult"];
+  const scoresByAge: Record<string, Score[]> = {};
+  for (const s of scores) {
+    const ag = s.ageGroup || "adult";
+    if (!scoresByAge[ag]) scoresByAge[ag] = [];
+    scoresByAge[ag].push(s);
+  }
+  for (const ag of Object.keys(scoresByAge)) {
+    scoresByAge[ag].sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+  }
+  const scoredGroups = groupOrder.filter((g) => scoresByAge[g]?.length);
+
+  // Status badge config
+  const statusConfig: Record<GameEventStatus, { label: string; bg: string; text: string; pulse?: boolean }> = {
+    "not-started": { label: t("notStarted"), bg: "bg-gray-100", text: "text-gray-500" },
+    "starting-soon": { label: t("startingSoon"), bg: "bg-amber-100", text: "text-amber-700", pulse: true },
+    "started": { label: t("inProgress"), bg: "bg-green-100", text: "text-green-700" },
+    "voting": { label: t("votingActive"), bg: "bg-blue-100", text: "text-blue-700", pulse: true },
+    "finished": { label: t("eventFinished"), bg: "bg-gray-100", text: "text-gray-400" },
+  };
+
+  // ---- Handlers ----
+  const handleStatusChange = async (ageGroup: RegistrationAgeGroup) => {
+    const current = game.events?.[ageGroup]?.status || "not-started";
+    const next = getNextStatus(current, game.scoringType);
+    if (!next) return;
+    setStatusUpdating(true);
+    await updateGameEventStatus(gameId, ageGroup, next);
+    await refreshData();
+    setStatusUpdating(false);
+  };
+
+  const handleRegister = async (participant: Participant, ageGroup: RegistrationAgeGroup) => {
+    setBusy(participant.id);
+    try {
+      await registerForGame({
+        gameId,
+        participantId: participant.id,
+        participantName: participant.name,
+        ageGroup,
+        registeredBy: "self",
+        timestamp: Date.now(),
+      });
+    } catch { /* already registered */ }
+    const fresh = await getRegistrationsByGame(gameId);
+    setRegistrations(fresh);
+    setBusy(null);
+  };
+
+  const handleUnregister = async (participantId: string) => {
+    setBusy(participantId);
+    try { await unregisterFromGame(gameId, participantId); } catch { /* ignore */ }
+    const fresh = await getRegistrationsByGame(gameId);
+    setRegistrations(fresh);
+    setBusy(null);
+  };
+
+  const handleVote = async (participantId: string) => {
+    if (voteSubmitting || myVotedIds.has(participantId)) return;
+    if (MAX_VOTES - myVotedIds.size <= 0) return;
+    setVoteSubmitting(participantId);
+    try {
+      await castVote({ gameId, participantId, voterId: getSessionId(), timestamp: Date.now() });
+      setMyVotedIds((prev) => new Set([...prev, participantId]));
+    } catch { /* already voted */ }
+    setVoteSubmitting(null);
+  };
+
+  const handleGuessSubmit = async (participant: Participant) => {
+    const inputVal = guessInputs.get(participant.id) || "";
+    if (!inputVal.trim()) return;
+    const isText = game.scoringType === "guess-text";
+    if (!isText) { const num = parseInt(inputVal, 10); if (isNaN(num) || num < 0) return; }
+    setGuessSubmitting(participant.id);
+    try {
+      const guessValue = isText ? inputVal.trim() : parseInt(inputVal, 10);
+      await submitGuess({ gameId, participantId: participant.id, participantName: participant.name, guess: guessValue, timestamp: Date.now() });
+      setGuesses((prev) => {
+        const updated = prev.filter((g) => g.participantId !== participant.id);
+        updated.push({ id: `${gameId}_${participant.id}`, gameId, participantId: participant.id, participantName: participant.name, guess: guessValue, timestamp: Date.now() });
+        return updated;
+      });
+    } catch { /* ignore */ }
+    setGuessSubmitting(null);
+  };
+
+  const handleAssignMedal = async (participant: Participant, position: 1 | 2 | 3, ageGroup: RegistrationAgeGroup) => {
+    setBusy(`medal_${participant.id}_${position}`);
+    try {
+      const ageScores = scores.filter((s) => (s.ageGroup || "adult") === ageGroup);
+      const existingHolder = ageScores.find((s) => s.position === position);
+      const existingForParticipant = ageScores.find((s) => s.participantId === participant.id);
+      if (existingHolder?.participantId === participant.id) {
+        await deleteScore(gameId, participant.id);
+      } else {
+        if (existingHolder) await deleteScore(gameId, existingHolder.participantId);
+        if (existingForParticipant) await deleteScore(gameId, participant.id);
+        await setScore({ gameId, participantId: participant.id, participantName: participant.name, ageGroup, position, points: position === 1 ? 3 : position === 2 ? 2 : 1, timestamp: Date.now() });
+      }
+      const freshScores = await getScoresByGame(gameId);
+      setScores(freshScores);
+    } catch { /* ignore */ }
+    setBusy(null);
+  };
+
+  const handleCalculateGuessWinners = async (ageGroup: RegistrationAgeGroup) => {
+    const answer = parseInt(correctAnswer, 10);
+    if (isNaN(answer) || answer < 0) return;
+    setCalculatingWinners(true);
+    await updateGame(gameId, { correctAnswer: answer });
+    const ageRegIds = new Set(registrations.filter((r) => r.ageGroup === ageGroup).map((r) => r.participantId));
+    const ageGuesses = guesses.filter((g) => ageRegIds.has(g.participantId));
+    const sorted = [...ageGuesses].sort((a, b) => Math.abs((a.guess as number) - answer) - Math.abs((b.guess as number) - answer));
+    const existingAgeScores = scores.filter((s) => (s.ageGroup || "adult") === ageGroup);
+    for (const s of existingAgeScores) await deleteScore(gameId, s.participantId);
+    const positions = [1, 2, 3] as const;
+    for (let i = 0; i < Math.min(3, sorted.length); i++) {
+      const g = sorted[i];
+      await setScore({ gameId, participantId: g.participantId, participantName: g.participantName, ageGroup, position: positions[i], points: positions[i] === 1 ? 3 : positions[i] === 2 ? 2 : 1, timestamp: Date.now() });
+    }
+    await refreshData();
+    setCalculatingWinners(false);
+  };
+
+  // ---- Render event card ----
+  const renderEventCard = (group: typeof ageGroups[number]) => {
+    const eventStatus = game.events?.[group.key]?.status || "not-started";
+    const isExpanded = expandedGroup === group.key;
+    const sc = statusConfig[eventStatus];
+    const regAllowed = canRegister(eventStatus, game.scoringType);
+    const votingActive = game.scoringType === "vote" && eventStatus === "voting";
+    const guessingActive = (game.scoringType === "guess" || game.scoringType === "guess-text") && eventStatus === "started";
+
+    const ageRegs = registrations.filter((r) => r.ageGroup === group.key);
+    const registeredIds = new Set(ageRegs.map((r) => r.participantId));
+    const regCount = registeredIds.size;
+
+    const eligible = participants.filter((p) => p.ageGroup === group.key);
+    const displayList = regAllowed && !votingActive
+      ? [...eligible].sort((a, b) => {
+          const aR = registeredIds.has(a.id) ? 0 : 1;
+          const bR = registeredIds.has(b.id) ? 0 : 1;
+          return aR - bR || a.name.localeCompare(b.name);
+        })
+      : eligible.filter((p) => registeredIds.has(p.id));
+
+    const ageScores = scores.filter((s) => (s.ageGroup || "adult") === group.key);
+    const scoreByP = new Map(ageScores.map((s) => [s.participantId, s]));
+    const guessMap = new Map(guesses.map((g) => [g.participantId, g]));
+    const votesRemaining = MAX_VOTES - myVotedIds.size;
+
+    return (
+      <div
+        key={group.key}
+        className={cn(
+          "rounded-xl border overflow-hidden transition-all mb-2",
+          eventStatus === "starting-soon" ? "border-amber-300 ring-1 ring-amber-200" :
+          eventStatus === "started" || eventStatus === "voting" ? "border-gray-200" :
+          "border-gray-100"
+        )}
+      >
+        {/* Header */}
+        <button
+          onClick={() => setExpandedGroup(isExpanded ? null : group.key)}
+          className="w-full flex items-center gap-3 px-4 py-3.5 bg-white hover:bg-gray-50 transition-colors"
+        >
+          <div className={cn("w-3 h-3 rounded-full shrink-0", group.color)} />
+          <span className="flex-1 text-left text-[14px] font-semibold text-gray-900">
+            {group.label}
+          </span>
+          <div className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium", sc.bg, sc.text)}>
+            {sc.pulse && (
+              <span className={cn(
+                "w-1.5 h-1.5 rounded-full animate-pulse",
+                eventStatus === "starting-soon" ? "bg-amber-500" : "bg-blue-500"
+              )} />
+            )}
+            {sc.label}
+          </div>
+          <span className="text-[12px] text-gray-400 tabular-nums ml-1">{regCount}</span>
+          {isExpanded
+            ? <ChevronUp className="w-4 h-4 text-gray-300 shrink-0" />
+            : <ChevronDown className="w-4 h-4 text-gray-300 shrink-0" />}
+        </button>
+
+        {/* Expanded */}
+        {isExpanded && (
+          <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
+            {/* Admin status control */}
+            {isJudge && (
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[11px] text-gray-400 uppercase tracking-wide">{t("status")}</span>
+                <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded-full", sc.bg, sc.text)}>{sc.label}</span>
+                {getNextStatus(eventStatus, game.scoringType) && (
+                  <button
+                    onClick={() => handleStatusChange(group.key)}
+                    disabled={statusUpdating}
+                    className="ml-auto text-[12px] font-medium px-3 py-1 bg-gray-900 text-white rounded-full hover:bg-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    {statusUpdating ? "..." : `${t("nextStatus")} →`}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Voting info */}
+            {votingActive && (
+              <p className="text-[12px] text-blue-600 font-medium mb-2">
+                {t("votesLeft", { count: votesRemaining })}
+              </p>
+            )}
+
+            {/* Participant list */}
+            {displayList.length === 0 ? (
+              <p className="text-[13px] text-gray-400 text-center py-4">{t("noParticipants")}</p>
+            ) : (
+              <div className="space-y-1">
+                {displayList.map((p) => {
+                  const isRegistered = registeredIds.has(p.id);
+                  const isBusy = busy === p.id;
+                  const pScore = scoreByP.get(p.id);
+                  const pGuess = guessMap.get(p.id);
+                  const hasVoted = myVotedIds.has(p.id);
+
+                  return (
+                    <div key={p.id} className="flex items-center gap-2.5 bg-white rounded-lg px-3 py-2">
+                      <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={32} className="rounded-full shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-medium text-gray-900 truncate">{p.name}</p>
+                        {pScore && (
+                          <p className="text-[11px]">
+                            {pScore.position === 1 ? "🥇" : pScore.position === 2 ? "🥈" : "🥉"}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Action column */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Not registered + can register */}
+                        {!isRegistered && regAllowed ? (
+                          <button
+                            onClick={() => handleRegister(p, group.key)}
+                            disabled={isBusy}
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors disabled:opacity-50"
+                          >
+                            {isBusy ? "..." : t("registerBtn")}
+                          </button>
+                        ) : isRegistered && votingActive ? (
+                          /* Vote button */
+                          <button
+                            onClick={() => handleVote(p.id)}
+                            disabled={hasVoted || votesRemaining <= 0 || voteSubmitting === p.id}
+                            className={cn(
+                              "flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full transition-colors disabled:opacity-50",
+                              hasVoted ? "bg-pink-100 text-pink-600" : "bg-gray-100 text-gray-600 hover:bg-pink-50 hover:text-pink-600"
+                            )}
+                          >
+                            <Heart className={cn("w-3 h-3", hasVoted && "fill-current")} />
+                            {voteSubmitting === p.id ? "..." : hasVoted ? t("voted") : t("vote")}
+                          </button>
+                        ) : isRegistered && guessingActive ? (
+                          /* Guess UI */
+                          pGuess ? (
+                            <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700">
+                              ✓ {String(pGuess.guess)}
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type={game.scoringType === "guess-text" ? "text" : "number"}
+                                value={guessInputs.get(p.id) || ""}
+                                onChange={(e) => setGuessInputs((prev) => new Map([...prev, [p.id, e.target.value]]))}
+                                placeholder={t("guessPlaceholder")}
+                                className="w-16 text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-gray-300"
+                              />
+                              <button
+                                onClick={() => handleGuessSubmit(p)}
+                                disabled={guessSubmitting === p.id || !(guessInputs.get(p.id) || "").trim()}
+                                className="text-[11px] font-medium px-2 py-1 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                              >
+                                {guessSubmitting === p.id ? "..." : t("submitGuess")}
+                              </button>
+                            </div>
+                          )
+                        ) : isJudge && eventStatus === "finished" && isRegistered ? (
+                          /* Medal assignment */
+                          <div className="flex items-center gap-0.5">
+                            {([1, 2, 3] as const).map((pos) => {
+                              const isAssigned = pScore?.position === pos;
+                              return (
+                                <button
+                                  key={pos}
+                                  onClick={() => handleAssignMedal(p, pos, group.key)}
+                                  disabled={busy === `medal_${p.id}_${pos}`}
+                                  className={cn(
+                                    "w-7 h-7 rounded-full flex items-center justify-center text-[12px] transition-all",
+                                    isAssigned
+                                      ? "bg-amber-400 text-white scale-110"
+                                      : "bg-gray-100 text-gray-400 hover:bg-amber-100 hover:text-amber-600"
+                                  )}
+                                >
+                                  {pos}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : !isJudge && eventStatus === "finished" && isRegistered && pScore ? (
+                          /* Public finished — medal badge */
+                          <span className="text-[14px]">
+                            {pScore.position === 1 ? "🥇" : pScore.position === 2 ? "🥈" : "🥉"}
+                          </span>
+                        ) : isRegistered && regAllowed ? (
+                          /* Registered — can unregister */
+                          <button
+                            onClick={() => handleUnregister(p.id)}
+                            disabled={isBusy}
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors disabled:opacity-50"
+                          >
+                            {isBusy ? "..." : `✓ ${t("registeredBtn")}`}
+                          </button>
+                        ) : isRegistered ? (
+                          /* Registered — static badge */
+                          <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-green-50 text-green-600">
+                            ✓ {t("registeredBtn")}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Guess game: correct answer (admin, finished) */}
+            {isJudge && game.scoringType === "guess" && eventStatus === "finished" && (
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={correctAnswer}
+                    onChange={(e) => setCorrectAnswer(e.target.value)}
+                    placeholder={t("correctAnswer")}
+                    className="flex-1 text-[12px] border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-gray-300"
+                    min={0}
+                  />
+                  <button
+                    onClick={() => handleCalculateGuessWinners(group.key)}
+                    disabled={calculatingWinners || !correctAnswer}
+                    className="text-[12px] font-medium px-3 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    {calculatingWinners ? "..." : t("calculateWinners")}
+                  </button>
+                </div>
+                {game.correctAnswer != null && (
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    {t("savedAnswer", { answer: game.correctAnswer })}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Guess-text: show guesses (admin, finished) */}
+            {isJudge && game.scoringType === "guess-text" && eventStatus === "finished" && (
+              <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
+                <p className="text-[11px] text-gray-400">{t("selectWinnersManually")}</p>
+                {guesses.filter((g) => registeredIds.has(g.participantId)).map((g) => (
+                  <div key={g.participantId} className="flex items-center gap-2 text-[12px]">
+                    <span className="font-medium text-gray-600">{g.participantName}:</span>
+                    <span className="text-gray-400">&quot;{String(g.guess)}&quot;</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <main className="flex flex-col min-h-screen bg-white">
+      <div className="max-w-lg mx-auto w-full px-5 pt-6 pb-8">
+        {/* Back arrow */}
+        <Link
+          href="/games"
+          className="inline-flex items-center gap-1 text-gray-400 hover:text-gray-900 text-sm mb-4 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          {t("backToGames")}
+        </Link>
+
+        {/* Header */}
+        <div className="text-center mb-6">
+          <h1 className="text-3xl sm:text-[36px] font-black tracking-tight text-gray-900 leading-[1.1]">
+            {game.name}
+          </h1>
+          <p className="text-[15px] text-gray-400 mt-1.5 font-normal leading-snug">
+            {game.nameSi}
+          </p>
+        </div>
+
+        {/* How to Play */}
+        {game.description && (
+          <div className="bg-teal-50 border border-teal-100 rounded-xl px-5 py-5 mb-3">
+            <h2 className="text-[16px] font-extrabold text-teal-900 tracking-tight mb-2">{t("howToPlay")}</h2>
+            <p className="text-[15px] text-teal-800 leading-relaxed font-medium">
+              {game.description}
+            </p>
+          </div>
+        )}
+
+        {/* Game Info line */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-gray-400 px-2 mb-4">
+          <span>{t("scoring")}: <span className="font-medium text-gray-600">{game.scoringType === "vote" ? t("audienceVote") : game.scoringType === "guess" ? t("guessGame") : game.scoringType === "guess-text" ? t("guessTextGame") : t("judgeScored")}</span></span>
+          <span className="text-gray-200">·</span>
+          <span>{t("responsible")}: <span className="font-medium text-gray-600">{game.responsiblePersons.join(", ")}</span></span>
+        </div>
+
+        {/* Age Group Event Cards */}
+        <div className="mb-4">
+          {ageGroups.map(renderEventCard)}
+        </div>
+
+        {/* Results */}
+        <div className="bg-gray-50 rounded-xl px-5 py-5">
+          <h2 className="text-[16px] font-extrabold text-gray-900 tracking-tight mb-2">{t("results")}</h2>
+          <p className="text-[13px] text-gray-400 mb-3 leading-snug">{t("resultsSubtext")}</p>
+          {scores.length === 0 ? (
+            <div className="py-4 text-center">
+              <p className="text-[13px] text-gray-400">{t("noResultsYet")}</p>
+              <p className="text-[11px] text-gray-300 mt-0.5">{t("resultsAppearLater")}</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {scoredGroups.map((g) => (
+                <div key={g}>
+                  <h3 className="text-[12px] font-semibold text-gray-500 mb-1.5">{groupLabels[g]?.label}</h3>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    {scoresByAge[g].map((s) => {
+                      const guessVal = (game.scoringType === "guess" || game.scoringType === "guess-text")
+                        ? guesses.find((gl) => gl.participantId === s.participantId)?.guess
+                        : undefined;
+                      return (
+                        <div key={s.id} className="flex items-center gap-1.5">
+                          <span className={cn(
+                            "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0",
+                            groupLabels[g]?.solid
+                          )}>
+                            {s.position}
+                          </span>
+                          <span className="text-[13px] text-gray-700">{s.participantName}</span>
+                          {guessVal != null && <span className="text-[11px] text-gray-400">({String(guessVal)})</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
