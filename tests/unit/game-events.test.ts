@@ -244,6 +244,31 @@ describe("Registration rules per status", () => {
     const canRegister = "finished" !== "finished";
     expect(canRegister).toBe(false);
   });
+
+  // Mirrors the Register tab logic: when finished, show end message instead of participant list
+  function getRegisterTabContent(status: GameEventStatus): "ended" | "list" {
+    return status === "finished" ? "ended" : "list";
+  }
+
+  it("shows ended message when game is finished", () => {
+    expect(getRegisterTabContent("finished")).toBe("ended");
+  });
+
+  it("shows participant list when game is not-started", () => {
+    expect(getRegisterTabContent("not-started")).toBe("list");
+  });
+
+  it("shows participant list when game is starting-soon", () => {
+    expect(getRegisterTabContent("starting-soon")).toBe("list");
+  });
+
+  it("shows participant list when game is started", () => {
+    expect(getRegisterTabContent("started")).toBe("list");
+  });
+
+  it("shows participant list when game is voting", () => {
+    expect(getRegisterTabContent("voting")).toBe("list");
+  });
 });
 
 describe("Judge action button states", () => {

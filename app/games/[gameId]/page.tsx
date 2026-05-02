@@ -432,6 +432,13 @@ export default function GameDetailPage({
               )}
               {/* ---- Register tab ---- */}
               {activeTab === "register" && (() => {
+                if (status === "finished") {
+                  return (
+                    <p className="text-[13px] text-gray-400 text-center py-6">
+                      This game has ended. Go back and register for the next game!
+                    </p>
+                  );
+                }
                 const filteredParticipants = ageFilter === "all" ? groupParticipants : groupParticipants.filter((p) => participantRegGroup(p) === ageFilter);
                 const filteredRegs = ageFilter === "all" ? groupRegs : groupRegs.filter((r) => r.ageGroup === ageFilter);
                 return (
