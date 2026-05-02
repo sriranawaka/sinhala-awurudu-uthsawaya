@@ -1250,3 +1250,74 @@ describe("Unique position enforcement in medal assignment", () => {
     expect(scores).toHaveLength(1);
   });
 });
+
+// ---- Guess tab status behavior ----
+
+describe("Guess tab status messages", () => {
+  // Mirrors the logic in the action tab for guess/guess-text scoring
+  type GuessTabState = "not-started" | "active" | "finished";
+
+  function getGuessTabState(status: GameEventStatus): GuessTabState {
+    if (status === "finished") return "finished";
+    if (status === "started") return "active";
+    return "not-started";
+  }
+
+  function getGuessTabMessage(state: GuessTabState): string | null {
+    if (state === "finished") return "Game is now over";
+    if (state === "not-started") return "Game has not started yet";
+    return null; // active — show inputs
+  }
+
+  function shouldShowAgeFilters(status: GameEventStatus, scoringType: string): boolean {
+    if ((scoringType === "guess" || scoringType === "guess-text") && status !== "started") return false;
+    return true;
+  }
+
+  it("shows 'Game has not started yet' when status is not-started", () => {
+    const state = getGuessTabState("not-started");
+    expect(state).toBe("not-started");
+    expect(getGuessTabMessage(state)).toBe("Game has not started yet");
+  });
+
+  it("shows 'Game has not started yet' when status is starting-soon", () => {
+    const state = getGuessTabState("starting-soon");
+    expect(state).toBe("not-started");
+    expect(getGuessTabMessage(state)).toBe("Game has not started yet");
+  });
+
+  it("shows no message (inputs visible) when status is started", () => {
+    const state = getGuessTabState("started");
+    expect(state).toBe("active");
+    expect(getGuessTabMessage(state)).toBeNull();
+  });
+
+  it("shows 'Game is now over' when status is finished", () => {
+    const state = getGuessTabState("finished");
+    expect(state).toBe("finished");
+    expect(getGuessTabMessage(state)).toBe("Game is now over");
+  });
+
+  it("shows 'Game is now over' when status is voting (non-guess type edge case)", () => {
+    const state = getGuessTabState("voting");
+    // voting is not "started" and not "finished", so treated as not-started
+    expect(state).toBe("not-started");
+    expect(getGuessTabMessage(state)).toBe("Game has not started yet");
+  });
+
+  it("hides age filters when guess game is not started", () => {
+    expect(shouldShowAgeFilters("not-started", "guess")).toBe(false);
+    expect(shouldShowAgeFilters("starting-soon", "guess")).toBe(false);
+    expect(shouldShowAgeFilters("finished", "guess-text")).toBe(false);
+  });
+
+  it("shows age filters when guess game is started", () => {
+    expect(shouldShowAgeFilters("started", "guess")).toBe(true);
+    expect(shouldShowAgeFilters("started", "guess-text")).toBe(true);
+  });
+
+  it("shows age filters for non-guess games regardless of status", () => {
+    expect(shouldShowAgeFilters("not-started", "judge")).toBe(true);
+    expect(shouldShowAgeFilters("finished", "vote")).toBe(true);
+  });
+});

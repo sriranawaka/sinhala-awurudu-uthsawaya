@@ -404,7 +404,7 @@ export default function GameDetailPage({
             {/* Tab content */}
             <div className="px-4 pb-4 pt-3">
               {/* Age filter buttons for combined events */}
-              {isCombined && (activeTab === "register" || activeTab === "action") && (
+              {isCombined && (activeTab === "register" || (activeTab === "action" && !((game.scoringType === "guess" || game.scoringType === "guess-text") && status !== "started"))) && (
                 <div className="flex items-center gap-1.5 mb-3">
                   {groups.map((g) => (
                     <button
@@ -589,14 +589,19 @@ export default function GameDetailPage({
                     })}
 
                     {/* Guess scoring type — show all registered with guess input */}
-                    {(game.scoringType === "guess" || game.scoringType === "guess-text") && filteredRegs.map((r) => {
+                    {(game.scoringType === "guess" || game.scoringType === "guess-text") && (
+                      status === "finished" ? (
+                        <p className="text-[13px] text-gray-400 text-center py-6">Game is now over</p>
+                      ) : status !== "started" ? (
+                        <p className="text-[13px] text-gray-400 text-center py-6">Game has not started yet</p>
+                      ) : (
+                        filteredRegs.map((r) => {
                       const p = participants.find((pp) => pp.id === r.participantId);
                       if (!p) return null;
                       const existingGuess = guesses.find((g) => g.participantId === p.id);
                       const pScore = groupScores.find((sc) => sc.participantId === p.id);
                       const inputKey = `${ek}-${p.id}`;
                       const inputVal = guessInputs[inputKey] ?? (existingGuess ? String(existingGuess.guess) : "");
-                      const canGuess = status === "started";
                       return (
                         <div key={p.id} className="flex items-center gap-2.5 py-2.5 px-3 bg-white rounded-lg">
                           <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={32} className="shrink-0 rounded-full" />
@@ -605,7 +610,6 @@ export default function GameDetailPage({
                             {existingGuess && <span className="text-[10px] text-gray-400">{t("guessPlaceholder")}: {String(existingGuess.guess)}</span>}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            {canGuess && (
                               <>
                                 <input
                                   type={game.scoringType === "guess" ? "number" : "text"}
@@ -629,11 +633,12 @@ export default function GameDetailPage({
                                   {busyAction === `guess-${p.id}` ? "..." : t("submitGuess")}
                                 </button>
                               </>
-                            )}
                           </div>
                         </div>
                       );
-                    })}
+                    })
+                      )
+                    )}
 
 
                   </div>
