@@ -499,6 +499,13 @@ export default function GameDetailPage({
 
               {/* ---- Teams tab (Kamba Adeema only) ---- */}
               {activeTab === "teams" && game.id === "kamba-adeema" && (() => {
+                if (!isJudge) {
+                  return (
+                    <div className="flex items-center justify-center py-10">
+                      <p className="text-[14px] text-gray-400 text-center">Only judges can manage teams</p>
+                    </div>
+                  );
+                }
                 if (status !== "starting-soon" && status !== "started") {
                   return (
                     <div className="flex items-center justify-center py-10">
@@ -558,7 +565,7 @@ export default function GameDetailPage({
                 const renderTeamList = (teamKey: "team1" | "team2", ids: string[], teamLabel: string, teamLabelSi: string) => (
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 px-1 pb-1">
-                      <span className={cn("text-[13px] font-extrabold", teamKey === "team1" ? "text-blue-700" : "text-red-700")}>{teamLabel}</span>
+                      <span className={cn("text-[13px] font-extrabold", teamKey === "team1" ? "text-[#800000]" : "text-[#DAA520]")}>{teamLabel}</span>
                       <span className="text-[11px] text-gray-400">{teamLabelSi}</span>
                       <span className="text-[10px] text-gray-300 ml-auto">{ids.length} members</span>
                     </div>
@@ -570,8 +577,8 @@ export default function GameDetailPage({
                       if (!p) return null;
                       const isLeader = idx === 0;
                       return (
-                        <div key={id} className={cn("flex items-center gap-2 py-2 px-3 bg-white rounded-lg", isLeader && "ring-1 ring-amber-200")}>
-                          <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0", teamKey === "team1" ? "bg-blue-500" : "bg-red-500")}>
+                        <div key={id} className="flex items-center gap-2 py-2 px-3 bg-white rounded-lg">
+                          <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0", teamKey === "team1" ? "bg-[#800000]" : "bg-[#DAA520]")}>
                             {idx + 1}
                           </span>
                           <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={28} className="shrink-0 rounded-full" />
@@ -580,13 +587,13 @@ export default function GameDetailPage({
                             {isLeader && <span className="text-[9px] font-bold text-amber-600">{t("teamLeader")}</span>}
                           </div>
                           {canEdit && (
-                            <div className="flex items-center gap-0.5 shrink-0">
-                              <button onClick={() => handleMoveUp(teamKey, idx)} disabled={idx === 0 || !!busyAction} className="w-6 h-6 rounded text-[10px] text-gray-400 hover:text-gray-700 disabled:opacity-30">↑</button>
-                              <button onClick={() => handleMoveDown(teamKey, idx)} disabled={idx >= ids.length - 1 || !!busyAction} className="w-6 h-6 rounded text-[10px] text-gray-400 hover:text-gray-700 disabled:opacity-30">↓</button>
-                              <button onClick={() => handleMoveToTeam(id, teamKey === "team1" ? "team2" : "team1")} disabled={!!busyAction} className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold", teamKey === "team1" ? "text-red-500 hover:bg-red-50" : "text-blue-500 hover:bg-blue-50")}>
+                            <div className="flex items-center gap-1 shrink-0 bg-gray-50 rounded-lg px-1.5 py-1">
+                              <button onClick={() => handleMoveUp(teamKey, idx)} disabled={idx === 0 || !!busyAction} className="w-7 h-7 rounded-md bg-white shadow-sm text-[12px] text-gray-500 hover:text-gray-900 disabled:opacity-30">↑</button>
+                              <button onClick={() => handleMoveDown(teamKey, idx)} disabled={idx >= ids.length - 1 || !!busyAction} className="w-7 h-7 rounded-md bg-white shadow-sm text-[12px] text-gray-500 hover:text-gray-900 disabled:opacity-30">↓</button>
+                              <button onClick={() => handleMoveToTeam(id, teamKey === "team1" ? "team2" : "team1")} disabled={!!busyAction} className={cn("px-2 py-1 rounded-md bg-white shadow-sm text-[9px] font-bold", teamKey === "team1" ? "text-[#DAA520] hover:bg-amber-50" : "text-[#800000] hover:bg-red-50")}>
                                 →{teamKey === "team1" ? t("teamUtiPila") : t("teamUduPila")}
                               </button>
-                              <button onClick={() => handleRemoveFromTeam(id)} disabled={!!busyAction} className="w-6 h-6 rounded text-[10px] text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
+                              <button onClick={() => handleRemoveFromTeam(id)} disabled={!!busyAction} className="w-7 h-7 rounded-md bg-white shadow-sm text-[12px] text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
                             </div>
                           )}
                         </div>
@@ -616,10 +623,10 @@ export default function GameDetailPage({
                             <div key={r.participantId} className="flex items-center gap-2 py-2 px-3 bg-white rounded-lg">
                               <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={28} className="shrink-0 rounded-full" />
                               <span className="text-[13px] font-semibold text-gray-900 flex-1 truncate">{p.name}</span>
-                              <button onClick={() => handleMoveToTeam(r.participantId, "team1")} disabled={!!busyAction} className="px-2 py-1 rounded text-[10px] font-bold text-blue-600 hover:bg-blue-50">
+                              <button onClick={() => handleMoveToTeam(r.participantId, "team1")} disabled={!!busyAction} className="px-2.5 py-1 rounded-md bg-[#800000]/10 text-[10px] font-bold text-[#800000] hover:bg-[#800000]/20">
                                 {t("teamUduPila")}
                               </button>
-                              <button onClick={() => handleMoveToTeam(r.participantId, "team2")} disabled={!!busyAction} className="px-2 py-1 rounded text-[10px] font-bold text-red-600 hover:bg-red-50">
+                              <button onClick={() => handleMoveToTeam(r.participantId, "team2")} disabled={!!busyAction} className="px-2.5 py-1 rounded-md bg-[#DAA520]/10 text-[10px] font-bold text-[#DAA520] hover:bg-[#DAA520]/20">
                                 {t("teamUtiPila")}
                               </button>
                             </div>
@@ -699,26 +706,28 @@ export default function GameDetailPage({
                             })}
                           </div>
                           {isJudge && status !== "finished" && (
-                            <button
-                              onClick={() => handleTeamWin(teamKey)}
-                              disabled={!!busyAction || score?.position === 1}
-                              className={cn(
-                                "w-full py-2 rounded-lg text-[12px] font-bold transition-colors",
-                                score?.position === 1
-                                  ? "bg-amber-100 text-amber-700 cursor-default"
-                                  : "bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
-                              )}
-                            >
-                              {busyAction === `team-win-${teamKey}` ? "..." : score?.position === 1 ? "🏆 Winner" : "Set as Winner"}
-                            </button>
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => handleTeamWin(teamKey)}
+                                disabled={!!busyAction || score?.position === 1}
+                                className={cn(
+                                  "px-4 py-1.5 rounded-lg text-[12px] font-bold transition-colors",
+                                  score?.position === 1
+                                    ? "bg-amber-100 text-amber-700 cursor-default"
+                                    : "bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                                )}
+                              >
+                                {busyAction === `team-win-${teamKey}` ? "..." : score?.position === 1 ? "🏆 Winner" : "Set as Winner"}
+                              </button>
+                            </div>
                           )}
                         </div>
                       );
 
                       return (
                         <div className="space-y-3">
-                          {renderTeamCard("team1", team1Ids, t("teamUduPila"), t("teamUduPilaSi"), "text-blue-700", team1Score)}
-                          {renderTeamCard("team2", team2Ids, t("teamUtiPila"), t("teamUtiPilaSi"), "text-red-700", team2Score)}
+                          {renderTeamCard("team1", team1Ids, t("teamUduPila"), t("teamUduPilaSi"), "text-[#800000]", team1Score)}
+                          {renderTeamCard("team2", team2Ids, t("teamUtiPila"), t("teamUtiPilaSi"), "text-[#DAA520]", team2Score)}
                         </div>
                       );
                     })()}
@@ -1101,8 +1110,8 @@ export default function GameDetailPage({
                     const team1Score = team1Leader ? groupScores.find((s) => s.participantId === team1Leader.id) : undefined;
                     const team2Score = team2Leader ? groupScores.find((s) => s.participantId === team2Leader.id) : undefined;
                     const teams = [
-                      { key: "team1" as const, ids: team1Ids, label: t("teamUduPila"), labelSi: t("teamUduPilaSi"), leader: team1Leader, score: team1Score, color: "text-blue-700" },
-                      { key: "team2" as const, ids: team2Ids, label: t("teamUtiPila"), labelSi: t("teamUtiPilaSi"), leader: team2Leader, score: team2Score, color: "text-red-700" },
+                      { key: "team1" as const, ids: team1Ids, label: t("teamUduPila"), labelSi: t("teamUduPilaSi"), leader: team1Leader, score: team1Score, color: "text-[#800000]" },
+                      { key: "team2" as const, ids: team2Ids, label: t("teamUtiPila"), labelSi: t("teamUtiPilaSi"), leader: team2Leader, score: team2Score, color: "text-[#DAA520]" },
                     ].sort((a, b) => (a.score?.position ?? 99) - (b.score?.position ?? 99));
 
                     return (
