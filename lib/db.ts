@@ -78,6 +78,18 @@ export async function updateGameEventStatus(
   });
 }
 
+export async function saveTeams(
+  gameId: string,
+  eventKey: EventKey,
+  team1: string[],
+  team2: string[],
+) {
+  await updateDoc(doc(db, "games", gameId), {
+    [`teams.${eventKey}.team1`]: team1,
+    [`teams.${eventKey}.team2`]: team2,
+  });
+}
+
 // ---- Schedule ----
 export async function getSchedule(): Promise<ScheduleItem[]> {
   const snap = await getDocs(query(col("schedule"), orderBy("itemNumber")));

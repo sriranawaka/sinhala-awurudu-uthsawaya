@@ -148,7 +148,18 @@
     "winnerIntro3": "වඩාත්ම දීප්තිමත් වූයේ මොවුන්ය.",
     "judgeFinishedHint": "මෙම ක්‍රීඩාව අවසන් විය — ස්ථාන අගුළු දමා ඇත. වෙනස් කිරීමට ස්ථානය පවතී යන්න වෙනස් කරන්න.",
     "noRegistered": "තවම කිසිවෙකු ලියාපදිංචි නැත",
-    "winnersNotReady": "තරඟය ආරම්භ වූ පසු ජයග්‍රාහකයින් මෙහි පෙන්වනු ඇත"
+    "winnersNotReady": "තරඟය ආරම්භ වූ පසු ජයග්‍රාහකයින් මෙහි පෙන්වනු ඇත",
+    "tabTeams": "කණ්ඩායම්",
+    "teamUduPila": "Udu Pila",
+    "teamUtiPila": "Uti Pila",
+    "teamUduPilaSi": "උඩු පිළ",
+    "teamUtiPilaSi": "යටි පිළ",
+    "teamLeader": "නායක",
+    "teamsNotAvailable": "කණ්ඩායම් සැකසීමට තරඟ තත්ත්වය ආරම්භ වෙමින් ලෙස වෙනස් කරන්න",
+    "teamsSaved": "කණ්ඩායම් සුරකින ලදී",
+    "dragToReorder": "අනුපිළිවෙල වෙනස් කිරීමට හෝ කණ්ඩායම් අතර ගෙන යාමට ඇද දමන්න",
+    "unassigned": "තවම කණ්ඩායමක නැත",
+    "teamWinner": "{team} — {leader} නායකත්වයෙන්"
   },
   "voting": {
     "title": "ඡන්දය දෙන්න",

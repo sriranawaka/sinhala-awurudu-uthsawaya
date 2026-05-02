@@ -148,7 +148,18 @@
     "winnerIntro3": "Here's who shone brightest.",
     "judgeFinishedHint": "This game has ended — positions are locked. Change status to In Progress to edit.",
     "noRegistered": "No one registered yet",
-    "winnersNotReady": "Winners will appear once the game is in progress"
+    "winnersNotReady": "Winners will appear once the game is in progress",
+    "tabTeams": "Teams",
+    "teamUduPila": "Udu Pila",
+    "teamUtiPila": "Uti Pila",
+    "teamUduPilaSi": "උඩු පිළ",
+    "teamUtiPilaSi": "යටි පිළ",
+    "teamLeader": "Captain",
+    "teamsNotAvailable": "Change event status to Starting to group teams",
+    "teamsSaved": "Teams saved",
+    "dragToReorder": "Drag members to reorder or move between teams",
+    "unassigned": "Not in a team yet",
+    "teamWinner": "{team} — led by {leader}"
   },
   "voting": {
     "title": "Vote",

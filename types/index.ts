@@ -40,6 +40,8 @@ export interface Game {
   correctAnswer?: number | string | null;
   order: number;
   events?: Record<string, { status: GameEventStatus }>;
+  /** Teams for team-based games like Kamba Adeema. Key = eventKey, value = two teams with ordered participant IDs (first = leader) */
+  teams?: Record<string, { team1: string[]; team2: string[] }>;
 }
 
 // ---- Schedule ----

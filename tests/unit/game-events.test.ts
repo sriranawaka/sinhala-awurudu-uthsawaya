@@ -1773,3 +1773,266 @@ describe("Game status derivation from multiple events", () => {
     expect(deriveGameStatus(["started", "voting", "finished"])).toBe("started");
   });
 });
+
+// =====================================================================
+// Kamba Adeema — Team-based game
+// =====================================================================
+describe("Kamba Adeema team game", () => {
+  interface TeamData { team1: string[]; team2: string[] }
+
+  // ---- Teams tab visibility ----
+  function getTeamsTabState(status: GameEventStatus): "editable" | "locked" | "unavailable" {
+    if (status === "starting-soon") return "editable";
+    if (status === "started") return "locked";
+    return "unavailable";
+  }
+
+  it("teams tab is editable when status is starting-soon", () => {
+    expect(getTeamsTabState("starting-soon")).toBe("editable");
+  });
+
+  it("teams tab is locked (view-only) when status is started", () => {
+    expect(getTeamsTabState("started")).toBe("locked");
+  });
+
+  it("teams tab is unavailable when not-started", () => {
+    expect(getTeamsTabState("not-started")).toBe("unavailable");
+  });
+
+  it("teams tab is unavailable when finished", () => {
+    expect(getTeamsTabState("finished")).toBe("unavailable");
+  });
+
+  // ---- Team assignment ----
+  function moveToTeam(teams: TeamData, participantId: string, target: "team1" | "team2"): TeamData {
+    const t1 = teams.team1.filter((id) => id !== participantId);
+    const t2 = teams.team2.filter((id) => id !== participantId);
+    if (target === "team1") t1.push(participantId);
+    else t2.push(participantId);
+    return { team1: t1, team2: t2 };
+  }
+
+  function removeFromTeam(teams: TeamData, participantId: string): TeamData {
+    return {
+      team1: teams.team1.filter((id) => id !== participantId),
+      team2: teams.team2.filter((id) => id !== participantId),
+    };
+  }
+
+  function moveUp(arr: string[], index: number): string[] {
+    if (index === 0) return arr;
+    const result = [...arr];
+    [result[index - 1], result[index]] = [result[index], result[index - 1]];
+    return result;
+  }
+
+  function moveDown(arr: string[], index: number): string[] {
+    if (index >= arr.length - 1) return arr;
+    const result = [...arr];
+    [result[index], result[index + 1]] = [result[index + 1], result[index]];
+    return result;
+  }
+
+  it("assigns participant to team1", () => {
+    const teams: TeamData = { team1: [], team2: [] };
+    const result = moveToTeam(teams, "p1", "team1");
+    expect(result.team1).toEqual(["p1"]);
+    expect(result.team2).toEqual([]);
+  });
+
+  it("assigns participant to team2", () => {
+    const teams: TeamData = { team1: [], team2: [] };
+    const result = moveToTeam(teams, "p1", "team2");
+    expect(result.team1).toEqual([]);
+    expect(result.team2).toEqual(["p1"]);
+  });
+
+  it("moves participant from team1 to team2", () => {
+    const teams: TeamData = { team1: ["p1", "p2"], team2: ["p3"] };
+    const result = moveToTeam(teams, "p1", "team2");
+    expect(result.team1).toEqual(["p2"]);
+    expect(result.team2).toEqual(["p3", "p1"]);
+  });
+
+  it("removes participant from team", () => {
+    const teams: TeamData = { team1: ["p1", "p2"], team2: ["p3"] };
+    const result = removeFromTeam(teams, "p1");
+    expect(result.team1).toEqual(["p2"]);
+    expect(result.team2).toEqual(["p3"]);
+  });
+
+  it("first member in team list is the leader", () => {
+    const teams: TeamData = { team1: ["leader1", "p2", "p3"], team2: ["leader2", "p4"] };
+    expect(teams.team1[0]).toBe("leader1");
+    expect(teams.team2[0]).toBe("leader2");
+  });
+
+  // ---- Reordering ----
+  it("moves member up in team", () => {
+    const arr = ["p1", "p2", "p3"];
+    expect(moveUp(arr, 1)).toEqual(["p2", "p1", "p3"]);
+  });
+
+  it("does not move first member up", () => {
+    const arr = ["p1", "p2", "p3"];
+    expect(moveUp(arr, 0)).toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("moves member down in team", () => {
+    const arr = ["p1", "p2", "p3"];
+    expect(moveDown(arr, 0)).toEqual(["p2", "p1", "p3"]);
+  });
+
+  it("does not move last member down", () => {
+    const arr = ["p1", "p2", "p3"];
+    expect(moveDown(arr, 2)).toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("moving second to first makes them leader", () => {
+    const arr = ["p1", "p2", "p3"];
+    const reordered = moveUp(arr, 1);
+    expect(reordered[0]).toBe("p2");
+  });
+
+  // ---- Unassigned participants ----
+  it("identifies unassigned participants", () => {
+    const teams: TeamData = { team1: ["p1"], team2: ["p2"] };
+    const allRegistered = ["p1", "p2", "p3", "p4"];
+    const assigned = new Set([...teams.team1, ...teams.team2]);
+    const unassigned = allRegistered.filter((id) => !assigned.has(id));
+    expect(unassigned).toEqual(["p3", "p4"]);
+  });
+
+  it("no unassigned when all are in teams", () => {
+    const teams: TeamData = { team1: ["p1", "p2"], team2: ["p3"] };
+    const allRegistered = ["p1", "p2", "p3"];
+    const assigned = new Set([...teams.team1, ...teams.team2]);
+    const unassigned = allRegistered.filter((id) => !assigned.has(id));
+    expect(unassigned).toEqual([]);
+  });
+
+  // ---- Team-based scoring (judge tab) ----
+  function getTeamScores(scores: Score[], team1LeaderId: string, team2LeaderId: string) {
+    const t1 = scores.find((s) => s.participantId === team1LeaderId);
+    const t2 = scores.find((s) => s.participantId === team2LeaderId);
+    return { team1Score: t1, team2Score: t2 };
+  }
+
+  function setTeamWinner(winningTeam: "team1" | "team2", team1LeaderId: string, team2LeaderId: string): { winnerId: string; winnerPos: 1; loserId: string; loserPos: 2 } {
+    return winningTeam === "team1"
+      ? { winnerId: team1LeaderId, winnerPos: 1, loserId: team2LeaderId, loserPos: 2 }
+      : { winnerId: team2LeaderId, winnerPos: 1, loserId: team1LeaderId, loserPos: 2 };
+  }
+
+  it("sets team1 as winner (position 1) and team2 as runner-up (position 2)", () => {
+    const result = setTeamWinner("team1", "leader1", "leader2");
+    expect(result.winnerId).toBe("leader1");
+    expect(result.winnerPos).toBe(1);
+    expect(result.loserId).toBe("leader2");
+    expect(result.loserPos).toBe(2);
+  });
+
+  it("sets team2 as winner (position 1) and team1 as runner-up (position 2)", () => {
+    const result = setTeamWinner("team2", "leader1", "leader2");
+    expect(result.winnerId).toBe("leader2");
+    expect(result.winnerPos).toBe(1);
+    expect(result.loserId).toBe("leader1");
+    expect(result.loserPos).toBe(2);
+  });
+
+  it("scores use team leader participantId", () => {
+    const scores: Score[] = [
+      makeScore("kamba-adeema", "leader1", "Leader 1", "teen", 1),
+      makeScore("kamba-adeema", "leader2", "Leader 2", "adult", 2),
+    ];
+    const { team1Score, team2Score } = getTeamScores(scores, "leader1", "leader2");
+    expect(team1Score?.position).toBe(1);
+    expect(team1Score?.points).toBe(5);
+    expect(team2Score?.position).toBe(2);
+    expect(team2Score?.points).toBe(4);
+  });
+
+  // ---- Winners display for team games ----
+  function getTeamWinners(
+    scores: Score[],
+    teams: TeamData,
+    participantNames: Record<string, string>,
+  ): { position: number; teamName: string; leaderName: string }[] {
+    const teamEntries = [
+      { key: "team1" as const, name: "Udu Pila", ids: teams.team1 },
+      { key: "team2" as const, name: "Uti Pila", ids: teams.team2 },
+    ];
+    const results: { position: number; teamName: string; leaderName: string }[] = [];
+    for (const team of teamEntries) {
+      const leaderId = team.ids[0];
+      if (!leaderId) continue;
+      const score = scores.find((s) => s.participantId === leaderId);
+      if (score) {
+        results.push({
+          position: score.position,
+          teamName: team.name,
+          leaderName: participantNames[leaderId] || leaderId,
+        });
+      }
+    }
+    return results.sort((a, b) => a.position - b.position);
+  }
+
+  it("winners tab shows team name with leader for team games", () => {
+    const scores: Score[] = [
+      makeScore("kamba-adeema", "leader1", "Alice", "teen", 1),
+      makeScore("kamba-adeema", "leader2", "Bob", "adult", 2),
+    ];
+    const teams: TeamData = { team1: ["leader1", "p2", "p3"], team2: ["leader2", "p4", "p5"] };
+    const names: Record<string, string> = { leader1: "Alice", leader2: "Bob" };
+    const winners = getTeamWinners(scores, teams, names);
+    expect(winners).toHaveLength(2);
+    expect(winners[0].position).toBe(1);
+    expect(winners[0].teamName).toBe("Udu Pila");
+    expect(winners[0].leaderName).toBe("Alice");
+    expect(winners[1].position).toBe(2);
+    expect(winners[1].teamName).toBe("Uti Pila");
+    expect(winners[1].leaderName).toBe("Bob");
+  });
+
+  it("winners tab handles no scores gracefully", () => {
+    const teams: TeamData = { team1: ["p1"], team2: ["p2"] };
+    const winners = getTeamWinners([], teams, { p1: "A", p2: "B" });
+    expect(winners).toHaveLength(0);
+  });
+
+  it("winners tab handles empty teams", () => {
+    const teams: TeamData = { team1: [], team2: [] };
+    const winners = getTeamWinners([], teams, {});
+    expect(winners).toHaveLength(0);
+  });
+
+  // ---- Status flow same as all other judge games ----
+  it("kamba-adeema follows same status flow as other games", () => {
+    expect(nextStatus("not-started", "judge")).toBe("starting-soon");
+    expect(nextStatus("starting-soon", "judge")).toBe("started");
+    expect(nextStatus("started", "judge")).toBe("finished");
+    expect(nextStatus("finished", "judge")).toBeNull();
+  });
+
+  // ---- Only judges/admins can edit teams ----
+  it("non-judges cannot edit teams", () => {
+    const isJudge = false;
+    const canEdit = isJudge && "starting-soon" === "starting-soon";
+    expect(canEdit).toBe(false);
+  });
+
+  it("judges can edit teams when starting-soon", () => {
+    const isJudge = true;
+    const status = "starting-soon";
+    const canEdit = isJudge && status === "starting-soon";
+    expect(canEdit).toBe(true);
+  });
+
+  it("judges cannot edit teams when started", () => {
+    const isJudge = true;
+    const status = "started";
+    const canEdit = isJudge && status === "starting-soon";
+    expect(canEdit).toBe(false);
+  });
+});

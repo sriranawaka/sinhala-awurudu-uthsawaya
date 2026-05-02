@@ -22,6 +22,7 @@ import {
   deleteScore,
   deleteScoresByGame,
   updateGame,
+  saveTeams,
 } from "@/lib/db";
 import { onAuthChange } from "@/lib/auth";
 import { getSessionId } from "@/lib/storage";
@@ -75,7 +76,7 @@ export default function GameDetailPage({
   const [loading, setLoading] = useState(true);
   const [isJudge, setIsJudge] = useState(false);
   const [expandedGroup, setExpandedGroup] = useState<EventKey | null>(null);
-  const [activeTab, setActiveTab] = useState<"register" | "action" | "judge" | "winners">("register");
+  const [activeTab, setActiveTab] = useState<"register" | "teams" | "action" | "judge" | "winners">("register");
   const [ageFilter, setAgeFilter] = useState<RegistrationAgeGroup | "all">("all");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [guessInputs, setGuessInputs] = useState<Record<string, string>>({});
@@ -369,14 +370,19 @@ export default function GameDetailPage({
             {/* Tabs */}
             <div className="flex border-b border-gray-200 px-4">
               {(() => {
-                const tabs: ("register" | "action" | "judge" | "winners")[] = ["register", "action"];
+                const isTeamGame = game.id === "kamba-adeema";
+                const tabs: ("register" | "teams" | "action" | "judge" | "winners")[] = ["register"];
+                if (isTeamGame) tabs.push("teams");
+                tabs.push("action");
                 if (isJudge && (game.scoringType === "guess" || game.scoringType === "guess-text")) tabs.push("judge");
                 tabs.push("winners");
                 return tabs;
               })().map((tab) => {
                 const label = tab === "register"
                   ? `${t("tabRegister")} (${groupRegs.length}/${groupParticipants.length})`
-                  : tab === "action"
+                  : tab === "teams"
+                    ? t("tabTeams")
+                    : tab === "action"
                     ? game.scoringType === "vote" ? t("tabVoting") : game.scoringType === "guess" || game.scoringType === "guess-text" ? t("tabGuessing") : t("tabJudging")
                     : tab === "judge"
                       ? t("tabJudging")
@@ -491,6 +497,140 @@ export default function GameDetailPage({
                 );
               })()}
 
+              {/* ---- Teams tab (Kamba Adeema only) ---- */}
+              {activeTab === "teams" && game.id === "kamba-adeema" && (() => {
+                if (status !== "starting-soon" && status !== "started") {
+                  return (
+                    <div className="flex items-center justify-center py-10">
+                      <p className="text-[14px] text-gray-400 text-center">{t("teamsNotAvailable")}</p>
+                    </div>
+                  );
+                }
+                const canEdit = isJudge && status === "starting-soon";
+                const teamData = game.teams?.[ek] || { team1: [], team2: [] };
+                const team1Ids: string[] = teamData.team1 || [];
+                const team2Ids: string[] = teamData.team2 || [];
+                const assignedIds = new Set([...team1Ids, ...team2Ids]);
+                const unassigned = groupRegs.filter((r) => !assignedIds.has(r.participantId));
+
+                const getParticipant = (id: string) => participants.find((p) => p.id === id);
+
+                const handleMoveToTeam = async (participantId: string, targetTeam: "team1" | "team2") => {
+                  const newTeam1 = team1Ids.filter((id) => id !== participantId);
+                  const newTeam2 = team2Ids.filter((id) => id !== participantId);
+                  if (targetTeam === "team1") newTeam1.push(participantId);
+                  else newTeam2.push(participantId);
+                  setBusyAction(`team-${participantId}`);
+                  await saveTeams(gameId, ek, newTeam1, newTeam2);
+                  await refreshData();
+                  setBusyAction(null);
+                };
+
+                const handleMoveUp = async (teamKey: "team1" | "team2", index: number) => {
+                  if (index === 0) return;
+                  const arr = teamKey === "team1" ? [...team1Ids] : [...team2Ids];
+                  [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+                  setBusyAction(`reorder-${teamKey}`);
+                  await saveTeams(gameId, ek, teamKey === "team1" ? arr : team1Ids, teamKey === "team2" ? arr : team2Ids);
+                  await refreshData();
+                  setBusyAction(null);
+                };
+
+                const handleMoveDown = async (teamKey: "team1" | "team2", index: number) => {
+                  const arr = teamKey === "team1" ? [...team1Ids] : [...team2Ids];
+                  if (index >= arr.length - 1) return;
+                  [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
+                  setBusyAction(`reorder-${teamKey}`);
+                  await saveTeams(gameId, ek, teamKey === "team1" ? arr : team1Ids, teamKey === "team2" ? arr : team2Ids);
+                  await refreshData();
+                  setBusyAction(null);
+                };
+
+                const handleRemoveFromTeam = async (participantId: string) => {
+                  const newTeam1 = team1Ids.filter((id) => id !== participantId);
+                  const newTeam2 = team2Ids.filter((id) => id !== participantId);
+                  setBusyAction(`team-${participantId}`);
+                  await saveTeams(gameId, ek, newTeam1, newTeam2);
+                  await refreshData();
+                  setBusyAction(null);
+                };
+
+                const renderTeamList = (teamKey: "team1" | "team2", ids: string[], teamLabel: string, teamLabelSi: string) => (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 px-1 pb-1">
+                      <span className={cn("text-[13px] font-extrabold", teamKey === "team1" ? "text-blue-700" : "text-red-700")}>{teamLabel}</span>
+                      <span className="text-[11px] text-gray-400">{teamLabelSi}</span>
+                      <span className="text-[10px] text-gray-300 ml-auto">{ids.length} members</span>
+                    </div>
+                    {ids.length === 0 && (
+                      <p className="text-[11px] text-gray-300 italic px-3 py-2">No members yet</p>
+                    )}
+                    {ids.map((id, idx) => {
+                      const p = getParticipant(id);
+                      if (!p) return null;
+                      const isLeader = idx === 0;
+                      return (
+                        <div key={id} className={cn("flex items-center gap-2 py-2 px-3 bg-white rounded-lg", isLeader && "ring-1 ring-amber-200")}>
+                          <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0", teamKey === "team1" ? "bg-blue-500" : "bg-red-500")}>
+                            {idx + 1}
+                          </span>
+                          <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={28} className="shrink-0 rounded-full" />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[13px] font-semibold text-gray-900 truncate block">{p.name}</span>
+                            {isLeader && <span className="text-[9px] font-bold text-amber-600">{t("teamLeader")}</span>}
+                          </div>
+                          {canEdit && (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button onClick={() => handleMoveUp(teamKey, idx)} disabled={idx === 0 || !!busyAction} className="w-6 h-6 rounded text-[10px] text-gray-400 hover:text-gray-700 disabled:opacity-30">↑</button>
+                              <button onClick={() => handleMoveDown(teamKey, idx)} disabled={idx >= ids.length - 1 || !!busyAction} className="w-6 h-6 rounded text-[10px] text-gray-400 hover:text-gray-700 disabled:opacity-30">↓</button>
+                              <button onClick={() => handleMoveToTeam(id, teamKey === "team1" ? "team2" : "team1")} disabled={!!busyAction} className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold", teamKey === "team1" ? "text-red-500 hover:bg-red-50" : "text-blue-500 hover:bg-blue-50")}>
+                                →{teamKey === "team1" ? t("teamUtiPila") : t("teamUduPila")}
+                              </button>
+                              <button onClick={() => handleRemoveFromTeam(id)} disabled={!!busyAction} className="w-6 h-6 rounded text-[10px] text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+
+                return (
+                  <div className="space-y-4">
+                    {canEdit && <p className="text-[11px] text-gray-400 px-1">{t("dragToReorder")}</p>}
+                    {!canEdit && status === "started" && <p className="text-[11px] text-gray-400 px-1">Teams are locked during the game</p>}
+
+                    <div className="grid grid-cols-1 gap-3">
+                      {renderTeamList("team1", team1Ids, t("teamUduPila"), t("teamUduPilaSi"))}
+                      {renderTeamList("team2", team2Ids, t("teamUtiPila"), t("teamUtiPilaSi"))}
+                    </div>
+
+                    {/* Unassigned participants */}
+                    {canEdit && unassigned.length > 0 && (
+                      <div className="space-y-1 pt-2 border-t border-gray-100">
+                        <p className="text-[12px] font-semibold text-gray-500 px-1">{t("unassigned")}</p>
+                        {unassigned.map((r) => {
+                          const p = getParticipant(r.participantId);
+                          if (!p) return null;
+                          return (
+                            <div key={r.participantId} className="flex items-center gap-2 py-2 px-3 bg-white rounded-lg">
+                              <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={28} className="shrink-0 rounded-full" />
+                              <span className="text-[13px] font-semibold text-gray-900 flex-1 truncate">{p.name}</span>
+                              <button onClick={() => handleMoveToTeam(r.participantId, "team1")} disabled={!!busyAction} className="px-2 py-1 rounded text-[10px] font-bold text-blue-600 hover:bg-blue-50">
+                                {t("teamUduPila")}
+                              </button>
+                              <button onClick={() => handleMoveToTeam(r.participantId, "team2")} disabled={!!busyAction} className="px-2 py-1 rounded text-[10px] font-bold text-red-600 hover:bg-red-50">
+                                {t("teamUtiPila")}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* ---- Action tab (Judge / Vote / Guess) ---- */}
               {activeTab === "action" && (() => {
                 const filteredRegs = ageFilter === "all" ? groupRegs : groupRegs.filter((r) => r.ageGroup === ageFilter);
@@ -507,8 +647,83 @@ export default function GameDetailPage({
                     {game.scoringType === "judge" && status === "finished" && isJudge && (
                       <p className="text-[12px] font-medium px-3 py-2 text-gray-400">{t("judgeFinishedHint")}</p>
                     )}
-                    {/* Judge scoring type — show all registered with 1/2/3 buttons */}
-                    {game.scoringType === "judge" && filteredRegs.map((r) => {
+                    {/* Team-based judge scoring (Kamba Adeema) */}
+                    {game.scoringType === "judge" && game.id === "kamba-adeema" && (() => {
+                      const teamData = game.teams?.[ek] || { team1: [], team2: [] };
+                      const team1Ids: string[] = teamData.team1 || [];
+                      const team2Ids: string[] = teamData.team2 || [];
+                      if (team1Ids.length === 0 && team2Ids.length === 0) {
+                        return <p className="text-[13px] text-gray-400 text-center py-6">{t("teamsNotAvailable")}</p>;
+                      }
+                      const team1Leader = participants.find((p) => p.id === team1Ids[0]);
+                      const team2Leader = participants.find((p) => p.id === team2Ids[0]);
+                      // Check existing scores — team leader's score determines team placement
+                      const team1Score = team1Leader ? groupScores.find((s) => s.participantId === team1Leader.id) : undefined;
+                      const team2Score = team2Leader ? groupScores.find((s) => s.participantId === team2Leader.id) : undefined;
+
+                      const handleTeamWin = async (winningTeam: "team1" | "team2") => {
+                        if (!isJudge || status === "finished") return;
+                        const winnerLeader = winningTeam === "team1" ? team1Leader : team2Leader;
+                        const loserLeader = winningTeam === "team1" ? team2Leader : team1Leader;
+                        const winnerAg = winnerLeader ? participantRegGroup(winnerLeader) : groups[0];
+                        const loserAg = loserLeader ? participantRegGroup(loserLeader) : groups[0];
+                        setBusyAction(`team-win-${winningTeam}`);
+                        // Clear existing team scores
+                        if (team1Leader) await deleteScore(gameId, team1Leader.id).catch(() => {});
+                        if (team2Leader) await deleteScore(gameId, team2Leader.id).catch(() => {});
+                        // Set winner as position 1, loser as position 2
+                        if (winnerLeader) await setScore({ gameId, participantId: winnerLeader.id, participantName: winnerLeader.name, ageGroup: winnerAg, position: 1, points: 5, timestamp: Date.now() });
+                        if (loserLeader) await setScore({ gameId, participantId: loserLeader.id, participantName: loserLeader.name, ageGroup: loserAg, position: 2, points: 4, timestamp: Date.now() });
+                        await refreshData();
+                        setBusyAction(null);
+                      };
+
+                      const renderTeamCard = (teamKey: "team1" | "team2", ids: string[], label: string, labelSi: string, color: string, score?: Score) => (
+                        <div className={cn("rounded-xl border p-3 space-y-2", score?.position === 1 ? "border-amber-300 bg-amber-50/50" : "border-gray-100 bg-white")}>
+                          <div className="flex items-center gap-2">
+                            <span className={cn("text-[14px] font-extrabold", color)}>{label}</span>
+                            <span className="text-[11px] text-gray-400">{labelSi}</span>
+                            {score && <span className={cn("ml-auto px-2 py-0.5 rounded-full text-[11px] font-bold", score.position === 1 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500")}>#{score.position}</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {ids.map((id, idx) => {
+                              const p = participants.find((pp) => pp.id === id);
+                              if (!p) return null;
+                              return (
+                                <div key={id} className="flex items-center gap-1.5 bg-gray-50 rounded-full px-2 py-1">
+                                  <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={20} className="shrink-0 rounded-full" />
+                                  <span className="text-[11px] font-semibold text-gray-700">{p.name}</span>
+                                  {idx === 0 && <span className="text-[8px] font-bold text-amber-600">★</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {isJudge && status !== "finished" && (
+                            <button
+                              onClick={() => handleTeamWin(teamKey)}
+                              disabled={!!busyAction || score?.position === 1}
+                              className={cn(
+                                "w-full py-2 rounded-lg text-[12px] font-bold transition-colors",
+                                score?.position === 1
+                                  ? "bg-amber-100 text-amber-700 cursor-default"
+                                  : "bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                              )}
+                            >
+                              {busyAction === `team-win-${teamKey}` ? "..." : score?.position === 1 ? "🏆 Winner" : "Set as Winner"}
+                            </button>
+                          )}
+                        </div>
+                      );
+
+                      return (
+                        <div className="space-y-3">
+                          {renderTeamCard("team1", team1Ids, t("teamUduPila"), t("teamUduPilaSi"), "text-blue-700", team1Score)}
+                          {renderTeamCard("team2", team2Ids, t("teamUtiPila"), t("teamUtiPilaSi"), "text-red-700", team2Score)}
+                        </div>
+                      );
+                    })()}
+                    {/* Individual judge scoring type — show all registered with 1/2/3 buttons */}
+                    {game.scoringType === "judge" && game.id !== "kamba-adeema" && filteredRegs.map((r) => {
                       const p = participants.find((pp) => pp.id === r.participantId);
                       if (!p) return null;
                       const pScore = groupScores.find((sc) => sc.participantId === p.id);
@@ -876,6 +1091,61 @@ export default function GameDetailPage({
                       </div>
                     );
                   }
+                  // Team-based winners (Kamba Adeema)
+                  if (game.id === "kamba-adeema") {
+                    const teamData = game.teams?.[ek] || { team1: [], team2: [] };
+                    const team1Ids: string[] = teamData.team1 || [];
+                    const team2Ids: string[] = teamData.team2 || [];
+                    const team1Leader = participants.find((p) => p.id === team1Ids[0]);
+                    const team2Leader = participants.find((p) => p.id === team2Ids[0]);
+                    const team1Score = team1Leader ? groupScores.find((s) => s.participantId === team1Leader.id) : undefined;
+                    const team2Score = team2Leader ? groupScores.find((s) => s.participantId === team2Leader.id) : undefined;
+                    const teams = [
+                      { key: "team1" as const, ids: team1Ids, label: t("teamUduPila"), labelSi: t("teamUduPilaSi"), leader: team1Leader, score: team1Score, color: "text-blue-700" },
+                      { key: "team2" as const, ids: team2Ids, label: t("teamUtiPila"), labelSi: t("teamUtiPilaSi"), leader: team2Leader, score: team2Score, color: "text-red-700" },
+                    ].sort((a, b) => (a.score?.position ?? 99) - (b.score?.position ?? 99));
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="text-center py-3">
+                          <p className="text-[13px] text-gray-500">{t("winnerIntro1")}</p>
+                          <p className="text-[13px] font-bold text-amber-600 animate-bounce">{t("winnerIntro2")}</p>
+                          <p className="text-[12px] text-gray-400 mt-1">{t("winnerIntro3")}</p>
+                        </div>
+                        {teams.map((team) => (
+                          <div key={team.key} className={cn("rounded-xl border p-3", team.score?.position === 1 ? "border-amber-300 bg-amber-50/50" : "border-gray-100")}>
+                            <div className="flex items-center gap-2.5">
+                              <span className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-black text-white shrink-0",
+                                team.score?.position === 1 ? "bg-amber-500" : "bg-gray-400"
+                              )}>
+                                {team.score?.position ?? "-"}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <span className={cn("text-[14px] font-extrabold block", team.color)}>{team.label} <span className="text-[11px] text-gray-400">{team.labelSi}</span></span>
+                                {team.leader && (
+                                  <span className="text-[12px] text-gray-500">{t("teamWinner", { team: team.label, leader: team.leader.name })}</span>
+                                )}
+                              </div>
+                              {team.score?.position === 1 && <span className="text-[20px]">🏆</span>}
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {team.ids.map((id, idx) => {
+                                const p = participants.find((pp) => pp.id === id);
+                                if (!p) return null;
+                                return (
+                                  <span key={id} className="flex items-center gap-1 bg-gray-50 rounded-full px-2 py-0.5 text-[10px] text-gray-600">
+                                    <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={16} className="shrink-0 rounded-full" />
+                                    {p.name}{idx === 0 && " ★"}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
                   return (
                     <div className="space-y-2">
                       {/* Celebration intro */}
@@ -997,6 +1267,32 @@ export default function GameDetailPage({
                   <div className="flex-1 min-w-0">
                     <span className="text-[14px] font-bold text-gray-900 block truncate">{game.name} — {combinedLabel}</span>
                     {isFinished && groupResults.length > 0 ? (
+                      game.id === "kamba-adeema" ? (() => {
+                        const teamData = game.teams?.[ek] || { team1: [], team2: [] };
+                        const team1Ids: string[] = teamData.team1 || [];
+                        const team2Ids: string[] = teamData.team2 || [];
+                        const team1Leader = participants.find((p) => p.id === team1Ids[0]);
+                        const team2Leader = participants.find((p) => p.id === team2Ids[0]);
+                        const team1Score = team1Leader ? groupResults.find((s) => s.participantId === team1Leader.id) : undefined;
+                        const team2Score = team2Leader ? groupResults.find((s) => s.participantId === team2Leader.id) : undefined;
+                        const teams = [
+                          { label: t("teamUduPila"), leader: team1Leader, score: team1Score },
+                          { label: t("teamUtiPila"), leader: team2Leader, score: team2Score },
+                        ].filter((tm) => tm.score).sort((a, b) => (a.score?.position ?? 99) - (b.score?.position ?? 99));
+                        return (
+                          <div className="flex items-center gap-3 mt-1 flex-wrap">
+                            {teams.map((tm) => (
+                              <span key={tm.label} className="flex items-center gap-1">
+                                <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0", meta.solid)}>
+                                  {tm.score!.position}
+                                </span>
+                                <span className="text-[12px] text-gray-700">{tm.label}</span>
+                                {tm.leader && <span className="text-[10px] text-gray-400">({tm.leader.name})</span>}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })() : (
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         {groupResults.map((s) => {
                           const guessVal = (game.scoringType === "guess" || game.scoringType === "guess-text")
@@ -1013,6 +1309,7 @@ export default function GameDetailPage({
                           );
                         })}
                       </div>
+                      )
                     ) : (
                       <p className="text-[11px] text-gray-400 mt-0.5">{t("resultsAppearLater")}</p>
                     )}
