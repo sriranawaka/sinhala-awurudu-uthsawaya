@@ -8,7 +8,7 @@ export default async function HomePage() {
   return (
     <main className="flex flex-col min-h-screen bg-white">
       {/* Hero — minimalist, centered */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-8">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-8 pb-8">
         {/* Awurudu illustration */}
         <div className="mb-6 w-full max-w-sm">
           <Image
