@@ -1393,3 +1393,59 @@ describe("Guess game medal assignment only when finished", () => {
     expect(canAssignMedals("not-started", "judge")).toBe(false);
   });
 });
+
+describe("Game status derivation from multiple events", () => {
+  // Mirrors getLatestEventStatus logic from games page
+  function deriveGameStatus(eventStatuses: GameEventStatus[]): GameEventStatus {
+    if (eventStatuses.length === 0) return "not-started";
+    const allFinished = eventStatuses.every((s) => s === "finished");
+    if (allFinished) return "finished";
+    // Take the least progressed (youngest) status
+    let minIdx = STATUS_ORDER.length - 1;
+    for (const s of eventStatuses) {
+      const idx = STATUS_ORDER.indexOf(s);
+      if (idx < minIdx) minIdx = idx;
+    }
+    return STATUS_ORDER[minIdx];
+  }
+
+  it("returns finished when all events are finished", () => {
+    expect(deriveGameStatus(["finished", "finished", "finished"])).toBe("finished");
+  });
+
+  it("returns finished for single finished event", () => {
+    expect(deriveGameStatus(["finished"])).toBe("finished");
+  });
+
+  it("returns not-started when all events are not-started", () => {
+    expect(deriveGameStatus(["not-started", "not-started"])).toBe("not-started");
+  });
+
+  it("returns youngest status when events differ", () => {
+    expect(deriveGameStatus(["started", "finished"])).toBe("started");
+  });
+
+  it("returns not-started when one event not-started and others finished", () => {
+    expect(deriveGameStatus(["not-started", "finished", "finished"])).toBe("not-started");
+  });
+
+  it("returns starting-soon when youngest is starting-soon", () => {
+    expect(deriveGameStatus(["starting-soon", "started", "finished"])).toBe("starting-soon");
+  });
+
+  it("returns started when youngest is started among started and finished", () => {
+    expect(deriveGameStatus(["started", "finished"])).toBe("started");
+  });
+
+  it("returns voting when youngest is voting", () => {
+    expect(deriveGameStatus(["voting", "finished"])).toBe("voting");
+  });
+
+  it("returns not-started for empty events", () => {
+    expect(deriveGameStatus([])).toBe("not-started");
+  });
+
+  it("returns started for mix of started, voting, finished", () => {
+    expect(deriveGameStatus(["started", "voting", "finished"])).toBe("started");
+  });
+});

@@ -21,13 +21,21 @@ function getLatestEventStatus(game: Game): { key: string; color: string } {
     return { key: "upcoming", color: "bg-blue-50 text-blue-500" };
   }
 
-  // Find the most progressed event status
-  let maxIdx = 0;
-  for (const ev of Object.values(game.events)) {
-    const idx = STATUS_ORDER.indexOf(ev.status);
-    if (idx > maxIdx) maxIdx = idx;
+  // Find the overall game status from event statuses
+  const eventStatuses = Object.values(game.events).map((ev) => ev.status);
+  const allFinished = eventStatuses.every((s) => s === "finished");
+  let latestStatus: GameEventStatus;
+  if (allFinished) {
+    latestStatus = "finished";
+  } else {
+    // Take the least progressed (youngest) event status
+    let minIdx = STATUS_ORDER.length - 1;
+    for (const s of eventStatuses) {
+      const idx = STATUS_ORDER.indexOf(s);
+      if (idx < minIdx) minIdx = idx;
+    }
+    latestStatus = STATUS_ORDER[minIdx];
   }
-  const latestStatus = STATUS_ORDER[maxIdx];
 
   const statusMap: Record<GameEventStatus, { key: string; color: string }> = {
     "not-started": { key: "upcoming", color: "bg-blue-50 text-blue-500" },
