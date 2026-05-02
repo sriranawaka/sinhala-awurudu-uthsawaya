@@ -1321,3 +1321,50 @@ describe("Guess tab status messages", () => {
     expect(shouldShowAgeFilters("finished", "vote")).toBe(true);
   });
 });
+
+describe("Guess game medal assignment only when finished", () => {
+  // Mirrors the Judge tab logic: section only renders when status === "finished"
+  function canAssignMedals(status: GameEventStatus, scoringType: string): boolean {
+    if (scoringType === "guess" || scoringType === "guess-text") {
+      return status === "finished";
+    }
+    // For other scoring types, medals can be assigned when started
+    return status === "started" || status === "voting";
+  }
+
+  it("cannot assign medals for guess game when not-started", () => {
+    expect(canAssignMedals("not-started", "guess")).toBe(false);
+  });
+
+  it("cannot assign medals for guess game when starting-soon", () => {
+    expect(canAssignMedals("starting-soon", "guess")).toBe(false);
+  });
+
+  it("cannot assign medals for guess game when started", () => {
+    expect(canAssignMedals("started", "guess")).toBe(false);
+  });
+
+  it("can assign medals for guess game when finished", () => {
+    expect(canAssignMedals("finished", "guess")).toBe(true);
+  });
+
+  it("cannot assign medals for guess-text game when not-started", () => {
+    expect(canAssignMedals("not-started", "guess-text")).toBe(false);
+  });
+
+  it("cannot assign medals for guess-text game when started", () => {
+    expect(canAssignMedals("started", "guess-text")).toBe(false);
+  });
+
+  it("can assign medals for guess-text game when finished", () => {
+    expect(canAssignMedals("finished", "guess-text")).toBe(true);
+  });
+
+  it("can assign medals for judge scoring when started", () => {
+    expect(canAssignMedals("started", "judge")).toBe(true);
+  });
+
+  it("cannot assign medals for judge scoring when not-started", () => {
+    expect(canAssignMedals("not-started", "judge")).toBe(false);
+  });
+});

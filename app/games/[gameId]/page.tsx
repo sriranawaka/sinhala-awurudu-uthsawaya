@@ -781,16 +781,12 @@ export default function GameDetailPage({
                                   <button
                                     key={pos}
                                     onClick={() => isMe ? handleRemoveMedal(p.id, participantRegGroup(p)) : handleAssignMedal(p.id, p.name, pos, participantRegGroup(p))}
-                                    disabled={status === "finished" || busyAction === `medal-${p.id}-${pos}` || busyAction === `medal-${p.id}-remove`}
+                                    disabled={busyAction === `medal-${p.id}-${pos}` || busyAction === `medal-${p.id}-remove`}
                                     className={cn(
                                       "w-7 h-7 rounded-full text-[11px] font-bold transition-colors",
                                       isMe
-                                        ? status === "finished"
-                                          ? cn("text-white opacity-60", meta.solid)
-                                          : cn("text-white", meta.solid)
-                                        : status === "finished"
-                                          ? "bg-gray-100 text-gray-300 opacity-40 cursor-default"
-                                          : taken
+                                        ? cn("text-white", meta.solid)
+                                        : taken
                                             ? "bg-gray-100 text-gray-300"
                                             : "bg-gray-100 text-gray-500 hover:text-white hover:bg-gray-500"
                                     )}
