@@ -27,6 +27,7 @@ export default async function HomePage() {
         </p>
         <h1 className="text-[40px] sm:text-[48px] font-black tracking-tight text-gray-900 leading-[1.05] text-center">
           {t("title")}
+          <span className="block">2026</span>
         </h1>
         <p className="text-[17px] text-gray-400 mt-3 font-normal text-center leading-relaxed">
           {t("subtitle")}
