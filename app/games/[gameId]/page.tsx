@@ -81,6 +81,7 @@ export default function GameDetailPage({
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [guessInputs, setGuessInputs] = useState<Record<string, string>>({});
   const [correctAnswerInput, setCorrectAnswerInput] = useState("");
+  const [sortedAnswer, setSortedAnswer] = useState("");
 
   const sessionId = typeof window !== "undefined" ? getSessionId() : "";
 
@@ -663,9 +664,9 @@ export default function GameDetailPage({
                   return overlap / Math.max(aChars.size, bChars.size);
                 };
 
-                // Sort guesses by relevance when correct answer is entered
+                // Sort guesses by relevance only when Sort button was pressed
                 const correctText = correctAnswerInput.trim();
-                const sortedRegs = correctText
+                const sortedRegs = sortedAnswer
                   ? [...allJudgeRegs].sort((a, b) => {
                       const gA = guesses.find((g) => g.participantId === a.participantId);
                       const gB = guesses.find((g) => g.participantId === b.participantId);
@@ -673,11 +674,11 @@ export default function GameDetailPage({
                       if (!gA) return 1;
                       if (!gB) return -1;
                       if (game.scoringType === "guess") {
-                        const answer = parseInt(correctText, 10);
+                        const answer = parseInt(sortedAnswer, 10);
                         if (!isNaN(answer)) return Math.abs((gA.guess as number) - answer) - Math.abs((gB.guess as number) - answer);
                       }
-                      const simA = textSimilarity(String(gA.guess), correctText);
-                      const simB = textSimilarity(String(gB.guess), correctText);
+                      const simA = textSimilarity(String(gA.guess), sortedAnswer);
+                      const simB = textSimilarity(String(gB.guess), sortedAnswer);
                       return simB - simA;
                     })
                   : allJudgeRegs;
@@ -697,20 +698,19 @@ export default function GameDetailPage({
                             placeholder={game.scoringType === "guess" ? "e.g. 42" : "e.g. Elephant"}
                             className="flex-1 px-3 py-2.5 text-[14px] border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-400"
                           />
-                          {correctText && (
-                            <button
-                              onClick={async () => {
-                                const answer = game.scoringType === "guess" ? parseInt(correctText, 10) : correctText;
-                                await updateGame(gameId, { correctAnswer: answer });
-                              }}
-                              disabled={!correctText || status === "finished"}
-                              className="px-5 py-2.5 bg-gray-900 text-white rounded-lg text-[13px] font-bold hover:bg-gray-800 disabled:opacity-50 transition-colors"
-                            >
-                              Sort
-                            </button>
-                          )}
+                          <button
+                            onClick={async () => {
+                              const answer = game.scoringType === "guess" ? parseInt(correctText, 10) : correctText;
+                              await updateGame(gameId, { correctAnswer: answer });
+                              setSortedAnswer(correctText);
+                            }}
+                            disabled={!correctText || status === "finished"}
+                            className="px-5 py-2.5 bg-gray-900 text-white rounded-lg text-[13px] font-bold hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                          >
+                            Sort
+                          </button>
                         </div>
-                        {correctText && (
+                        {sortedAnswer && (
                           <p className="text-[11px] text-gray-400">
                             {game.scoringType === "guess"
                               ? "Sorted by closest guess. Assign 1st, 2nd, 3rd using the buttons."
@@ -719,7 +719,14 @@ export default function GameDetailPage({
                         )}
                       </div>
 
-                    {/* List all guesses (sorted for guess-text when answer entered) */}
+                    {/* Show message when game not in progress */}
+                    {status !== "started" && status !== "finished" ? (
+                      <p className="text-[13px] text-gray-400 text-center py-6">
+                        Judges will be able to judge when the game is in progress
+                      </p>
+                    ) : (
+                    /* List all guesses (sorted for guess-text when answer entered) */
+                    <div className="space-y-1">
                     {sortedRegs.map((r) => {
                       const p = participants.find((pp) => pp.id === r.participantId);
                       if (!p) return null;
@@ -790,6 +797,8 @@ export default function GameDetailPage({
                         </div>
                       );
                     })}
+                    </div>
+                    )}
                   </div>
                 );
               })()}
