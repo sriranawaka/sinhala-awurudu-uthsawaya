@@ -11,13 +11,13 @@ export default async function HomePage() {
       {/* Hero — minimalist, centered */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-8">
         {/* Awurudu illustration */}
-        <div className="mb-6">
+        <div className="mb-6 w-full max-w-sm">
           <Image
-            src="/awurudu-hero.jpeg"
+            src="/sun.jpg"
             alt="සුභ අලුත් අවුරුද්දක් වේවා"
-            width={240}
-            height={180}
-            className="mx-auto"
+            width={400}
+            height={400}
+            className="mx-auto w-full h-auto rounded-2xl"
             priority
           />
         </div>
