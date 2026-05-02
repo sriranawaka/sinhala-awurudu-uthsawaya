@@ -220,14 +220,197 @@ describe("Winners tab display logic", () => {
     expect(status === "finished" && groupScores.length > 0).toBe(true);
   });
 
-  it("only shows top 3 winners", () => {
+  it("shows up to 5 winners", () => {
     const scores: Score[] = [
       makeScore("g1", "p1", "Alice", "kid", 1),
       makeScore("g1", "p2", "Bob", "kid", 2),
       makeScore("g1", "p3", "Charlie", "kid", 3),
+      makeScore("g1", "p4", "Diana", "kid", 4),
+      makeScore("g1", "p5", "Eve", "kid", 5),
     ];
-    const displayed = scores.slice(0, 3);
+    const displayed = scores.slice(0, 5);
+    expect(displayed).toHaveLength(5);
+    expect(displayed[0].position).toBe(1);
+    expect(displayed[4].position).toBe(5);
+  });
+
+  it("does not show more than 5 even if more scores exist", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "A", "kid", 1),
+      makeScore("g1", "p2", "B", "kid", 2),
+      makeScore("g1", "p3", "C", "kid", 3),
+      makeScore("g1", "p4", "D", "kid", 4),
+      makeScore("g1", "p5", "E", "kid", 5),
+      makeScore("g1", "p6", "F", "kid", 5), // duplicate 5th — shouldn't display
+    ];
+    const displayed = scores.sort((a, b) => a.position - b.position).slice(0, 5);
+    expect(displayed).toHaveLength(5);
+  });
+
+  it("shows fewer than 5 when fewer scores exist", () => {
+    const scores: Score[] = [
+      makeScore("g1", "p1", "Alice", "kid", 1),
+      makeScore("g1", "p2", "Bob", "kid", 2),
+    ];
+    const displayed = scores.slice(0, 5);
+    expect(displayed).toHaveLength(2);
+  });
+});
+
+describe("Winners tab shows 5 positions across all scoring types and age groups", () => {
+  // Mirrors the real groupScores logic from page.tsx line 276:
+  // groups.flatMap(g => scoresByAge[g] || []).sort((a,b) => (a.position ?? 99) - (b.position ?? 99))
+  function getDisplayedWinners(scores: Score[], ageGroups: string[]): Score[] {
+    const scoresByAge = groupScoresByAge(scores);
+    const groupScores = ageGroups.flatMap((g) => scoresByAge[g] || []).sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+    return groupScores.slice(0, 5);
+  }
+
+  // ---- judge scoring ----
+  it("judge-scored game: kid event shows all 5 winners", () => {
+    const scores = [1, 2, 3, 4, 5].map((pos) =>
+      makeScore("game-judge", `pk${pos}`, `Kid${pos}`, "kid", pos as 1|2|3|4|5)
+    );
+    const displayed = getDisplayedWinners(scores, ["kid"]);
+    expect(displayed).toHaveLength(5);
+    expect(displayed.map((d) => d.position)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("judge-scored game: teen event shows all 5 winners", () => {
+    const scores = [1, 2, 3, 4, 5].map((pos) =>
+      makeScore("game-judge", `pt${pos}`, `Teen${pos}`, "teen", pos as 1|2|3|4|5)
+    );
+    const displayed = getDisplayedWinners(scores, ["teen"]);
+    expect(displayed).toHaveLength(5);
+    expect(displayed.map((d) => d.position)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("judge-scored game: adult event shows all 5 winners", () => {
+    const scores = [1, 2, 3, 4, 5].map((pos) =>
+      makeScore("game-judge", `pa${pos}`, `Adult${pos}`, "adult", pos as 1|2|3|4|5)
+    );
+    const displayed = getDisplayedWinners(scores, ["adult"]);
+    expect(displayed).toHaveLength(5);
+    expect(displayed.map((d) => d.position)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("judge-scored game: shows only 2 winners when only 2 scored", () => {
+    const scores = [
+      makeScore("game-judge", "p1", "Alice", "kid", 1),
+      makeScore("game-judge", "p2", "Bob", "kid", 2),
+    ];
+    const displayed = getDisplayedWinners(scores, ["kid"]);
+    expect(displayed).toHaveLength(2);
+    expect(displayed.map((d) => d.position)).toEqual([1, 2]);
+  });
+
+  // ---- vote scoring ----
+  it("vote-scored game: shows 5 winners when 5 are assigned", () => {
+    const scores = [1, 2, 3, 4, 5].map((pos) =>
+      makeScore("game-vote", `pv${pos}`, `Voter${pos}`, "adult", pos as 1|2|3|4|5)
+    );
+    const displayed = getDisplayedWinners(scores, ["adult"]);
+    expect(displayed).toHaveLength(5);
+  });
+
+  it("vote-scored game: shows 3 when only 3 scored", () => {
+    const scores = [1, 2, 3].map((pos) =>
+      makeScore("game-vote", `pv${pos}`, `Voter${pos}`, "adult", pos as 1|2|3|4|5)
+    );
+    const displayed = getDisplayedWinners(scores, ["adult"]);
     expect(displayed).toHaveLength(3);
+  });
+
+  // ---- guess scoring ----
+  it("guess-scored game: kid event shows 5 closest guessers", () => {
+    const scores = [1, 2, 3, 4, 5].map((pos) =>
+      makeScore("game-guess", `pg${pos}`, `Guesser${pos}`, "kid", pos as 1|2|3|4|5)
+    );
+    const displayed = getDisplayedWinners(scores, ["kid"]);
+    expect(displayed).toHaveLength(5);
+    expect(displayed.map((d) => d.position)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("guess-scored game: adult event shows 5 winners", () => {
+    const scores = [1, 2, 3, 4, 5].map((pos) =>
+      makeScore("game-guess", `pg${pos}`, `Guesser${pos}`, "adult", pos as 1|2|3|4|5)
+    );
+    const displayed = getDisplayedWinners(scores, ["adult"]);
+    expect(displayed).toHaveLength(5);
+  });
+
+  // ---- guess-text scoring ----
+  it("guess-text game: shows 5 winners", () => {
+    const scores = [1, 2, 3, 4, 5].map((pos) =>
+      makeScore("game-guess-text", `pgt${pos}`, `TextGuesser${pos}`, "teen", pos as 1|2|3|4|5)
+    );
+    const displayed = getDisplayedWinners(scores, ["teen"]);
+    expect(displayed).toHaveLength(5);
+  });
+
+  // ---- combined events (multiple age groups in one event) ----
+  it("combined event: shows 5 winners from mixed age groups sorted by position", () => {
+    const scores = [
+      makeScore("game-combined", "pk1", "KidWinner", "kid", 1),
+      makeScore("game-combined", "pt1", "TeenWinner", "teen", 2),
+      makeScore("game-combined", "pa1", "AdultWinner", "adult", 3),
+      makeScore("game-combined", "pk2", "Kid4th", "kid", 4),
+      makeScore("game-combined", "pt2", "Teen5th", "teen", 5),
+    ];
+    const displayed = getDisplayedWinners(scores, ["kid", "teen", "adult"]);
+    expect(displayed).toHaveLength(5);
+    expect(displayed.map((d) => d.position)).toEqual([1, 2, 3, 4, 5]);
+    expect(displayed[0].participantName).toBe("KidWinner");
+    expect(displayed[1].participantName).toBe("TeenWinner");
+    expect(displayed[2].participantName).toBe("AdultWinner");
+  });
+
+  it("combined event: caps at 5 even with more scores from multiple age groups", () => {
+    const scores = [
+      makeScore("game-combined", "p1", "A", "kid", 1),
+      makeScore("game-combined", "p2", "B", "teen", 1),
+      makeScore("game-combined", "p3", "C", "adult", 1),
+      makeScore("game-combined", "p4", "D", "kid", 2),
+      makeScore("game-combined", "p5", "E", "teen", 2),
+      makeScore("game-combined", "p6", "F", "adult", 2),
+    ];
+    const displayed = getDisplayedWinners(scores, ["kid", "teen", "adult"]);
+    expect(displayed).toHaveLength(5);
+  });
+
+  // ---- points correctness ----
+  it("5-position points are 5,4,3,2,1 respectively", () => {
+    const scores = [1, 2, 3, 4, 5].map((pos) =>
+      makeScore("g1", `p${pos}`, `Player${pos}`, "adult", pos as 1|2|3|4|5)
+    );
+    expect(scores[0].points).toBe(5);
+    expect(scores[1].points).toBe(4);
+    expect(scores[2].points).toBe(3);
+    expect(scores[3].points).toBe(2);
+    expect(scores[4].points).toBe(1);
+  });
+
+  // ---- empty / edge cases ----
+  it("returns empty when no scores for the age group", () => {
+    const scores = [
+      makeScore("g1", "p1", "Alice", "adult", 1),
+    ];
+    const displayed = getDisplayedWinners(scores, ["kid"]);
+    expect(displayed).toHaveLength(0);
+  });
+
+  it("returns empty when scores array is empty", () => {
+    const displayed = getDisplayedWinners([], ["kid", "teen", "adult"]);
+    expect(displayed).toHaveLength(0);
+  });
+
+  it("single winner displays correctly", () => {
+    const scores = [makeScore("g1", "p1", "SoloChamp", "teen", 1)];
+    const displayed = getDisplayedWinners(scores, ["teen"]);
+    expect(displayed).toHaveLength(1);
+    expect(displayed[0].participantName).toBe("SoloChamp");
+    expect(displayed[0].position).toBe(1);
+    expect(displayed[0].points).toBe(5);
   });
 });
 
@@ -961,9 +1144,11 @@ describe("Count Toffee Bottle guess sorting and judge assignment", () => {
       { participantId: "p1", position: 1 },
       { participantId: "p2", position: 2 },
       { participantId: "p3", position: 3 },
+      { participantId: "p4", position: 4 },
+      { participantId: "p5", position: 5 },
     ];
     expect(groupScores.length).toBeGreaterThan(0);
-    expect(groupScores.slice(0, 3)).toHaveLength(3);
+    expect(groupScores.slice(0, 5)).toHaveLength(5);
   });
 
   it("combined event calculates winners across all guesses (no age group filtering)", () => {

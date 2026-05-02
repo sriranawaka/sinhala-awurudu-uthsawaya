@@ -831,7 +831,7 @@ export default function GameDetailPage({
                       <p className="text-[13px] font-bold text-amber-600 animate-bounce">{t("winnerIntro2")}</p>
                       <p className="text-[12px] text-gray-400 mt-1">{t("winnerIntro3")}</p>
                     </div>
-                    {groupScores.slice(0, 3).map((s) => {
+                    {groupScores.slice(0, 5).map((s) => {
                       const p = participants.find((pp) => pp.id === s.participantId);
                       if (!p) return null;
                       return (
