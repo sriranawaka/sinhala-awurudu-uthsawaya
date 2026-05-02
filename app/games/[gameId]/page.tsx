@@ -685,7 +685,14 @@ export default function GameDetailPage({
 
                 return (
                   <div className="space-y-3">
-                    {/* Correct answer input — always visible for judge */}
+                    {/* Show message when game not finished */}
+                    {status !== "finished" ? (
+                      <p className="text-[13px] text-gray-400 text-center py-6">
+                        Judges will be able to judge when the game is in progress
+                      </p>
+                    ) : (
+                    <>
+                    {/* Correct answer input — visible for judge when finished */}
                     <div className="space-y-2 pb-3 border-b border-gray-100">
                         <p className="text-[12px] text-gray-500 font-medium">
                           {game.scoringType === "guess" ? "Enter the correct toffee count:" : "Enter the correct object name:"}
@@ -704,7 +711,7 @@ export default function GameDetailPage({
                               await updateGame(gameId, { correctAnswer: answer });
                               setSortedAnswer(correctText);
                             }}
-                            disabled={!correctText || status === "finished"}
+                            disabled={!correctText}
                             className="px-5 py-2.5 bg-gray-900 text-white rounded-lg text-[13px] font-bold hover:bg-gray-800 disabled:opacity-50 transition-colors"
                           >
                             Sort
@@ -719,13 +726,7 @@ export default function GameDetailPage({
                         )}
                       </div>
 
-                    {/* Show message when game not finished */}
-                    {status !== "finished" ? (
-                      <p className="text-[13px] text-gray-400 text-center py-6">
-                        Judges will be able to judge when the game is in progress
-                      </p>
-                    ) : (
-                    /* List all guesses (sorted for guess-text when answer entered) */
+                    {/* List all guesses (sorted for guess-text when answer entered) */}
                     <div className="space-y-1">
                     {sortedRegs.map((r) => {
                       const p = participants.find((pp) => pp.id === r.participantId);
@@ -798,6 +799,7 @@ export default function GameDetailPage({
                       );
                     })}
                     </div>
+                    </>
                     )}
                   </div>
                 );
