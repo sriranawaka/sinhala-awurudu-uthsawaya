@@ -38,7 +38,8 @@ function nextStatus(current: GameEventStatus, scoringType: string): GameEventSta
   if (idx === -1) return null;
   let next = idx + 1;
   if (next >= STATUS_ORDER.length) return null;
-  if (STATUS_ORDER[next] === "voting" && scoringType !== "vote") next++;
+  // Always skip "voting" status — all games go not-started → starting-soon → started → finished
+  if (STATUS_ORDER[next] === "voting") next++;
   if (next >= STATUS_ORDER.length) return null;
   return STATUS_ORDER[next];
 }
@@ -314,7 +315,7 @@ export default function GameDetailPage({
               </span>
             )}
           </div>
-          <span className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold", STATUS_STYLE[status], (status === "starting-soon" || status === "voting") && "animate-pulse")}>
+          <span className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold", STATUS_STYLE[status], status === "starting-soon" && "animate-pulse")}>
             {statusLabel(status, game.scoringType)}
           </span>
           <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", isExpanded && "rotate-180")} />
@@ -322,9 +323,7 @@ export default function GameDetailPage({
 
         {/* Stepper — inside header area, visible only when expanded */}
         {isExpanded && (() => {
-          const steps: GameEventStatus[] = game.scoringType === "vote"
-            ? ["not-started", "starting-soon", "started", "voting", "finished"]
-            : ["not-started", "starting-soon", "started", "finished"];
+          const steps: GameEventStatus[] = ["not-started", "starting-soon", "started", "finished"];
           const currentIdx = steps.indexOf(status);
 
           return (
@@ -449,17 +448,15 @@ export default function GameDetailPage({
                     {/* Status hint */}
                     <p className={cn(
                       "text-[11px] font-semibold px-1 pb-1",
-                      status === "finished" ? "text-gray-400" : meta.text
+                      meta.text
                     )}>
                       {status === "not-started" && t("registerHintUpcoming")}
                       {status === "starting-soon" && t("registerHintStartingSoon")}
                       {status === "started" && t("registerHintInProgress")}
                       {status === "voting" && t("registerHintVoting")}
-                      {status === "finished" && <>{t("registerHintFinished")} <span className={meta.text}>{t("registerHintFinishedCta")}</span></>}
                     </p>
                     {filteredParticipants.map((p) => {
                       const isRegistered = groupRegs.some((r) => r.participantId === p.id);
-                      const canRegister = status !== "finished";
 
                       return (
                         <div key={p.id} className="flex items-center gap-2.5 py-2.5 px-3 bg-white rounded-lg">
@@ -472,13 +469,13 @@ export default function GameDetailPage({
                             {!isRegistered && (
                               <button
                                 onClick={() => handleRegister(p.id, p.name, participantRegGroup(p))}
-                                disabled={!canRegister || busyAction === `reg-${p.id}`}
+                                disabled={busyAction === `reg-${p.id}`}
                                 className="px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors disabled:opacity-40 shadow-sm bg-gray-900 text-white hover:bg-gray-800"
                               >
                                 {busyAction === `reg-${p.id}` ? "..." : <><UserPlus className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />{t("registerBtn")}</>}
                               </button>
                             )}
-                            {canRegister && isRegistered && (
+                            {isRegistered && (
                               <button
                                 onClick={() => handleUnregister(p.id)}
                                 disabled={busyAction === `reg-${p.id}`}
@@ -486,11 +483,6 @@ export default function GameDetailPage({
                               >
                                 {busyAction === `reg-${p.id}` ? "..." : <><UserCheck className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />{t("registeredBtn")}</>}
                               </button>
-                            )}
-                            {!canRegister && isRegistered && (
-                              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500">
-                                <UserCheck className="w-3 h-3 inline mr-0.5 -mt-0.5" />{t("registeredBtn")}
-                              </span>
                             )}
                           </div>
                         </div>
@@ -505,7 +497,7 @@ export default function GameDetailPage({
               {activeTab === "action" && (() => {
                 const filteredRegs = ageFilter === "all" ? groupRegs : groupRegs.filter((r) => r.ageGroup === ageFilter);
                 return (
-                (status !== "started" && status !== "voting" && status !== "finished") ? (
+                (status !== "started" && status !== "finished") ? (
                   <div className="flex items-center justify-center py-10">
                     <p className="text-[14px] text-gray-400 text-center">{t("tabNotActive")}</p>
                   </div>
@@ -564,36 +556,55 @@ export default function GameDetailPage({
                     })}
 
                     {/* Vote scoring type — show all registered with vote button */}
-                    {game.scoringType === "vote" && filteredRegs.map((r) => {
-                      const p = participants.find((pp) => pp.id === r.participantId);
-                      if (!p) return null;
-                      const voteCount = votes.filter((v) => v.participantId === p.id).length;
-                      const alreadyVoted = myVotes.some((v) => v.participantId === p.id);
-                      const votesUsed = myVotes.length;
-                      return (
-                        <div key={p.id} className="flex items-center gap-2.5 py-2.5 px-3 bg-white rounded-lg">
-                          <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={32} className="shrink-0 rounded-full" />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[13px] font-semibold text-gray-900 truncate block">{p.name}</span>
-                            <span className="text-[10px] text-gray-400">{voteCount} {t("vote")}</span>
-                          </div>
-                          <div className="shrink-0">
-                            {status === "voting" && !alreadyVoted && votesUsed < MAX_VOTES && (
-                              <button
-                                onClick={() => handleVote(p.id)}
-                                disabled={busyAction === `vote-${p.id}`}
-                                className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
-                              >
-                                {busyAction === `vote-${p.id}` ? "..." : <><ThumbsUp className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />{t("vote")}</>}
-                              </button>
-                            )}
-                            {alreadyVoted && (
-                              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500">{t("voted")}</span>
-                            )}
-                          </div>
+                    {game.scoringType === "vote" && (
+                      status === "finished" ? (
+                        <div className="flex items-center justify-center py-10">
+                          <p className="text-[14px] text-gray-400 text-center">{t("votingOver")}</p>
                         </div>
-                      );
-                    })}
+                      ) : status !== "started" ? (
+                        <div className="flex items-center justify-center py-10">
+                          <p className="text-[14px] text-gray-400 text-center">{t("votingNotStarted")}</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {/* Vote education */}
+                          <div className="px-3 py-2 bg-blue-50 rounded-lg">
+                            <p className="text-[12px] text-blue-700 font-medium">{t("voteEducation", { max: MAX_VOTES })}</p>
+                            <p className="text-[11px] text-blue-500 mt-0.5">{t("votesLeft", { count: MAX_VOTES - myVotes.length })}</p>
+                          </div>
+                          {filteredRegs.map((r) => {
+                            const p = participants.find((pp) => pp.id === r.participantId);
+                            if (!p) return null;
+                            const voteCount = votes.filter((v) => v.participantId === p.id).length;
+                            const alreadyVoted = myVotes.some((v) => v.participantId === p.id);
+                            const votesUsed = myVotes.length;
+                            return (
+                              <div key={p.id} className="flex items-center gap-2.5 py-2.5 px-3 bg-white rounded-lg">
+                                <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={32} className="shrink-0 rounded-full" />
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-[13px] font-semibold text-gray-900 truncate block">{p.name}</span>
+                                  <span className="text-[10px] text-gray-400">{voteCount} {t("vote")}</span>
+                                </div>
+                                <div className="shrink-0">
+                                  {!alreadyVoted && votesUsed < MAX_VOTES && (
+                                    <button
+                                      onClick={() => handleVote(p.id)}
+                                      disabled={busyAction === `vote-${p.id}`}
+                                      className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                                    >
+                                      {busyAction === `vote-${p.id}` ? "..." : <><ThumbsUp className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />{t("vote")}</>}
+                                    </button>
+                                  )}
+                                  {alreadyVoted && (
+                                    <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500">{t("voted")}</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )
+                    )}
 
                     {/* Guess scoring type — show all registered with guess input */}
                     {(game.scoringType === "guess" || game.scoringType === "guess-text") && (
@@ -819,39 +830,90 @@ export default function GameDetailPage({
                   <div className="flex items-center justify-center py-10">
                     <p className="text-[14px] text-gray-400 text-center">{t("winnersOnlyWhenFinished")}</p>
                   </div>
-                ) : groupScores.length === 0 ? (
-                  <div className="flex items-center justify-center py-10">
-                    <p className="text-[14px] text-gray-400 text-center">{t("noResultsYet")}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {/* Celebration intro */}
-                    <div className="text-center py-3">
-                      <p className="text-[13px] text-gray-500">{t("winnerIntro1")}</p>
-                      <p className="text-[13px] font-bold text-amber-600 animate-bounce">{t("winnerIntro2")}</p>
-                      <p className="text-[12px] text-gray-400 mt-1">{t("winnerIntro3")}</p>
-                    </div>
-                    {groupScores.slice(0, 5).map((s) => {
-                      const p = participants.find((pp) => pp.id === s.participantId);
-                      if (!p) return null;
+                ) : (() => {
+                  // For vote games, rank by vote count; for others, use scores
+                  if (game.scoringType === "vote") {
+                    const voteCounts = new Map<string, number>();
+                    for (const v of votes) {
+                      voteCounts.set(v.participantId, (voteCounts.get(v.participantId) || 0) + 1);
+                    }
+                    const ranked = Array.from(voteCounts.entries())
+                      .map(([id, count]) => ({ id, name: participants.find((pp) => pp.id === id)?.name || id, votes: count }))
+                      .sort((a, b) => b.votes - a.votes)
+                      .slice(0, 5);
+                    if (ranked.length === 0) {
                       return (
-                        <div key={s.id} className="flex items-center gap-2.5 py-3 px-3 rounded-lg">
-                          <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={32} className="shrink-0 rounded-full" />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[14px] font-bold text-gray-900 truncate block">{s.participantName}</span>
-                            <span className={cn("text-[12px] font-semibold animate-bounce inline-block", meta.text)}><span className="text-[14px]">🎉</span> {t("congratsWinner")}</span>
-                          </div>
-                          <span className={cn(
-                            "w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-black text-white shrink-0",
-                            meta.solid
-                          )}>
-                            {s.position}
-                          </span>
+                        <div className="flex items-center justify-center py-10">
+                          <p className="text-[14px] text-gray-400 text-center">{t("noResultsYet")}</p>
                         </div>
                       );
-                    })}
+                    }
+                    return (
+                      <div className="space-y-2">
+                        <div className="text-center py-3">
+                          <p className="text-[13px] text-gray-500">{t("winnerIntro1")}</p>
+                          <p className="text-[13px] font-bold text-amber-600 animate-bounce">{t("winnerIntro2")}</p>
+                          <p className="text-[12px] text-gray-400 mt-1">{t("winnerIntro3")}</p>
+                        </div>
+                        {ranked.map((entry, i) => {
+                          const p = participants.find((pp) => pp.id === entry.id);
+                          return (
+                            <div key={entry.id} className="flex items-center gap-2.5 py-3 px-3 rounded-lg">
+                              {p && <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={32} className="shrink-0 rounded-full" />}
+                              <div className="flex-1 min-w-0">
+                                <span className="text-[14px] font-bold text-gray-900 truncate block">{entry.name}</span>
+                                <span className={cn("text-[12px] font-semibold animate-bounce inline-block", meta.text)}><span className="text-[14px]">🎉</span> {entry.votes} {t("vote")}</span>
+                              </div>
+                              <span className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-black text-white shrink-0",
+                                meta.solid
+                              )}>
+                                {i + 1}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                  // Non-vote games: use scores
+                  if (groupScores.length === 0) {
+                    return (
+                      <div className="flex items-center justify-center py-10">
+                        <p className="text-[14px] text-gray-400 text-center">{t("noResultsYet")}</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {/* Celebration intro */}
+                      <div className="text-center py-3">
+                        <p className="text-[13px] text-gray-500">{t("winnerIntro1")}</p>
+                        <p className="text-[13px] font-bold text-amber-600 animate-bounce">{t("winnerIntro2")}</p>
+                        <p className="text-[12px] text-gray-400 mt-1">{t("winnerIntro3")}</p>
+                      </div>
+                      {groupScores.slice(0, 5).map((s) => {
+                        const p = participants.find((pp) => pp.id === s.participantId);
+                        if (!p) return null;
+                        return (
+                          <div key={s.id} className="flex items-center gap-2.5 py-3 px-3 rounded-lg">
+                            <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={32} className="shrink-0 rounded-full" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[14px] font-bold text-gray-900 truncate block">{s.participantName}</span>
+                              <span className={cn("text-[12px] font-semibold animate-bounce inline-block", meta.text)}><span className="text-[14px]">🎉</span> {t("congratsWinner")}</span>
+                            </div>
+                            <span className={cn(
+                              "w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-black text-white shrink-0",
+                              meta.solid
+                            )}>
+                              {s.position}
+                            </span>
+                          </div>
+                        );
+                      })}
                   </div>
-                )
+                  );
+                })()
               )}
             </div>
           </div>

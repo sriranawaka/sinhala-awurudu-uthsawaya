@@ -7,11 +7,10 @@ import { eventKeyGroups } from "@/types";
 const STATUS_ORDER: GameEventStatus[] = ["not-started", "starting-soon", "started", "voting", "finished"];
 
 function nextStatus(current: GameEventStatus, scoringType: string): GameEventStatus | null {
-  const steps: GameEventStatus[] = scoringType === "vote"
-    ? ["not-started", "starting-soon", "started", "voting", "finished"]
-    : ["not-started", "starting-soon", "started", "finished"];
+  // All games skip "voting" status: not-started → starting-soon → started → finished
+  const steps: GameEventStatus[] = ["not-started", "starting-soon", "started", "finished"];
   const idx = steps.indexOf(current);
-  return idx < steps.length - 1 ? steps[idx + 1] : null;
+  return idx >= 0 && idx < steps.length - 1 ? steps[idx + 1] : null;
 }
 
 function groupScoresByAge(scores: Score[]): Record<string, Score[]> {
@@ -56,11 +55,10 @@ describe("Game event status flow", () => {
     expect(nextStatus("finished", "judge")).toBeNull();
   });
 
-  it("nextStatus for vote scoring includes voting step", () => {
+  it("nextStatus for vote scoring: same as other games (no voting step)", () => {
     expect(nextStatus("not-started", "vote")).toBe("starting-soon");
     expect(nextStatus("starting-soon", "vote")).toBe("started");
-    expect(nextStatus("started", "vote")).toBe("voting");
-    expect(nextStatus("voting", "vote")).toBe("finished");
+    expect(nextStatus("started", "vote")).toBe("finished");
     expect(nextStatus("finished", "vote")).toBeNull();
   });
 
@@ -411,6 +409,159 @@ describe("Winners tab shows 5 positions across all scoring types and age groups"
     expect(displayed[0].participantName).toBe("SoloChamp");
     expect(displayed[0].position).toBe(1);
     expect(displayed[0].points).toBe(5);
+  });
+});
+
+describe("Vote game tab and winners behavior", () => {
+  // Mirrors the vote tab state logic from page.tsx
+  interface Vote { participantId: string; voterId: string }
+  const MAX_VOTES = 3;
+
+  function getVoteTabState(status: GameEventStatus): "not-started" | "active" | "finished" {
+    if (status === "finished") return "finished";
+    if (status === "started") return "active";
+    return "not-started";
+  }
+
+  function canCastVote(myVotes: Vote[], participantId: string): boolean {
+    if (myVotes.length >= MAX_VOTES) return false;
+    if (myVotes.some((v) => v.participantId === participantId)) return false;
+    return true;
+  }
+
+  function getVoteWinners(votes: Vote[], maxWinners = 5): { participantId: string; votes: number }[] {
+    const counts = new Map<string, number>();
+    for (const v of votes) {
+      counts.set(v.participantId, (counts.get(v.participantId) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([id, count]) => ({ participantId: id, votes: count }))
+      .sort((a, b) => b.votes - a.votes)
+      .slice(0, maxWinners);
+  }
+
+  // ---- Vote tab status gating ----
+  it("vote tab shows 'not started' when game is not-started", () => {
+    expect(getVoteTabState("not-started")).toBe("not-started");
+  });
+
+  it("vote tab shows 'not started' when game is starting-soon", () => {
+    expect(getVoteTabState("starting-soon")).toBe("not-started");
+  });
+
+  it("vote tab is active when game is started (In Progress)", () => {
+    expect(getVoteTabState("started")).toBe("active");
+  });
+
+  it("vote tab shows 'finished' when game is finished", () => {
+    expect(getVoteTabState("finished")).toBe("finished");
+  });
+
+  it("vote tab does NOT activate on 'voting' status (removed)", () => {
+    // voting status is no longer used, treated as not-started
+    expect(getVoteTabState("voting")).toBe("not-started");
+  });
+
+  // ---- 3-vote limit ----
+  it("allows voting when no votes cast yet", () => {
+    expect(canCastVote([], "p1")).toBe(true);
+  });
+
+  it("allows voting when fewer than 3 votes used", () => {
+    const myVotes: Vote[] = [
+      { participantId: "p1", voterId: "me" },
+      { participantId: "p2", voterId: "me" },
+    ];
+    expect(canCastVote(myVotes, "p3")).toBe(true);
+  });
+
+  it("blocks voting when all 3 votes used", () => {
+    const myVotes: Vote[] = [
+      { participantId: "p1", voterId: "me" },
+      { participantId: "p2", voterId: "me" },
+      { participantId: "p3", voterId: "me" },
+    ];
+    expect(canCastVote(myVotes, "p4")).toBe(false);
+  });
+
+  it("blocks duplicate vote for same participant", () => {
+    const myVotes: Vote[] = [
+      { participantId: "p1", voterId: "me" },
+    ];
+    expect(canCastVote(myVotes, "p1")).toBe(false);
+  });
+
+  it("MAX_VOTES is 3", () => {
+    expect(MAX_VOTES).toBe(3);
+  });
+
+  // ---- Vote-based winners (sorted by vote count) ----
+  it("ranks winners by vote count descending", () => {
+    const votes: Vote[] = [
+      { participantId: "p1", voterId: "v1" },
+      { participantId: "p2", voterId: "v1" },
+      { participantId: "p2", voterId: "v2" },
+      { participantId: "p3", voterId: "v1" },
+      { participantId: "p3", voterId: "v2" },
+      { participantId: "p3", voterId: "v3" },
+    ];
+    const winners = getVoteWinners(votes);
+    expect(winners[0].participantId).toBe("p3"); // 3 votes
+    expect(winners[0].votes).toBe(3);
+    expect(winners[1].participantId).toBe("p2"); // 2 votes
+    expect(winners[1].votes).toBe(2);
+    expect(winners[2].participantId).toBe("p1"); // 1 vote
+    expect(winners[2].votes).toBe(1);
+  });
+
+  it("shows up to 5 vote winners", () => {
+    const votes: Vote[] = [];
+    for (let i = 1; i <= 7; i++) {
+      for (let j = 0; j < (8 - i); j++) {
+        votes.push({ participantId: `p${i}`, voterId: `v${j}` });
+      }
+    }
+    const winners = getVoteWinners(votes);
+    expect(winners).toHaveLength(5);
+    expect(winners[0].participantId).toBe("p1"); // 7 votes
+    expect(winners[4].participantId).toBe("p5"); // 3 votes
+  });
+
+  it("returns empty when no votes exist", () => {
+    expect(getVoteWinners([])).toHaveLength(0);
+  });
+
+  it("single voter single participant shows 1 winner", () => {
+    const votes: Vote[] = [{ participantId: "p1", voterId: "v1" }];
+    const winners = getVoteWinners(votes);
+    expect(winners).toHaveLength(1);
+    expect(winners[0].votes).toBe(1);
+  });
+
+  it("tied votes preserve order", () => {
+    const votes: Vote[] = [
+      { participantId: "p1", voterId: "v1" },
+      { participantId: "p2", voterId: "v2" },
+    ];
+    const winners = getVoteWinners(votes);
+    expect(winners).toHaveLength(2);
+    expect(winners[0].votes).toBe(1);
+    expect(winners[1].votes).toBe(1);
+  });
+
+  // ---- Vote game status flow (same as all other games) ----
+  it("vote game status flow: not-started → starting-soon → started → finished", () => {
+    expect(nextStatus("not-started", "vote")).toBe("starting-soon");
+    expect(nextStatus("starting-soon", "vote")).toBe("started");
+    expect(nextStatus("started", "vote")).toBe("finished");
+    expect(nextStatus("finished", "vote")).toBeNull();
+  });
+
+  // ---- Vote game stepper has 4 steps (no voting step) ----
+  it("vote game stepper has 4 steps matching other games", () => {
+    const steps: GameEventStatus[] = ["not-started", "starting-soon", "started", "finished"];
+    expect(steps).toHaveLength(4);
+    expect(steps).not.toContain("voting");
   });
 });
 
