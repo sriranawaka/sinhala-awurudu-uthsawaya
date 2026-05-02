@@ -92,7 +92,7 @@ export default function SchedulePage() {
               ? "bg-amber-500 text-white"
               : past
                 ? "bg-gray-200 text-gray-400"
-                : "bg-gray-200 text-gray-600"
+                : "bg-primary/10 text-primary"
           )}>
             {item.startTime}
           </span>
