@@ -415,7 +415,6 @@ describe("Winners tab shows 5 positions across all scoring types and age groups"
 describe("Vote game tab and winners behavior", () => {
   // Mirrors the vote tab state logic from page.tsx
   interface Vote { participantId: string; voterId: string }
-  const MAX_VOTES = 3;
 
   function getVoteTabState(status: GameEventStatus): "not-started" | "active" | "finished" {
     if (status === "finished") return "finished";
@@ -423,10 +422,8 @@ describe("Vote game tab and winners behavior", () => {
     return "not-started";
   }
 
-  function canCastVote(myVotes: Vote[], participantId: string): boolean {
-    if (myVotes.length >= MAX_VOTES) return false;
-    if (myVotes.some((v) => v.participantId === participantId)) return false;
-    return true;
+  function hasAlreadyVoted(myVotes: Vote[], participantId: string): boolean {
+    return myVotes.some((v) => v.participantId === participantId);
   }
 
   function getVoteWinners(votes: Vote[], maxWinners = 5): { participantId: string; votes: number }[] {
@@ -462,37 +459,26 @@ describe("Vote game tab and winners behavior", () => {
     expect(getVoteTabState("voting")).toBe("not-started");
   });
 
-  // ---- 3-vote limit ----
+  // ---- No hard vote limit, but prevents duplicate votes ----
   it("allows voting when no votes cast yet", () => {
-    expect(canCastVote([], "p1")).toBe(true);
+    expect(hasAlreadyVoted([], "p1")).toBe(false);
   });
 
-  it("allows voting when fewer than 3 votes used", () => {
-    const myVotes: Vote[] = [
-      { participantId: "p1", voterId: "me" },
-      { participantId: "p2", voterId: "me" },
-    ];
-    expect(canCastVote(myVotes, "p3")).toBe(true);
-  });
-
-  it("blocks voting when all 3 votes used", () => {
+  it("allows voting for a new participant even with many votes", () => {
     const myVotes: Vote[] = [
       { participantId: "p1", voterId: "me" },
       { participantId: "p2", voterId: "me" },
       { participantId: "p3", voterId: "me" },
+      { participantId: "p4", voterId: "me" },
     ];
-    expect(canCastVote(myVotes, "p4")).toBe(false);
+    expect(hasAlreadyVoted(myVotes, "p5")).toBe(false);
   });
 
   it("blocks duplicate vote for same participant", () => {
     const myVotes: Vote[] = [
       { participantId: "p1", voterId: "me" },
     ];
-    expect(canCastVote(myVotes, "p1")).toBe(false);
-  });
-
-  it("MAX_VOTES is 3", () => {
-    expect(MAX_VOTES).toBe(3);
+    expect(hasAlreadyVoted(myVotes, "p1")).toBe(true);
   });
 
   // ---- Vote-based winners (sorted by vote count) ----

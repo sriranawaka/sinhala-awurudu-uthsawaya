@@ -3,7 +3,8 @@
 import { use, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, ChevronDown, UserPlus, UserCheck, ThumbsUp } from "lucide-react";
+import { ArrowLeft, ChevronDown, UserPlus, UserCheck, Heart } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   getGames,
   getScoresByGame,
@@ -24,12 +25,9 @@ import {
 } from "@/lib/db";
 import { onAuthChange } from "@/lib/auth";
 import { getSessionId } from "@/lib/storage";
-import { cn } from "@/lib/utils";
 import { AvatarIcon } from "@/components/avatar-icon";
 import type { Game, Score, GameRegistration, Guess, Vote, Participant, RegistrationAgeGroup, GameEventStatus, EventKey } from "@/types";
 import { eventKeyGroups } from "@/types";
-
-const MAX_VOTES = 3;
 
 const STATUS_ORDER: GameEventStatus[] = ["not-started", "starting-soon", "started", "voting", "finished"];
 
@@ -568,16 +566,12 @@ export default function GameDetailPage({
                       ) : (
                         <div className="space-y-1.5">
                           {/* Vote education */}
-                          <div className="px-3 py-2 bg-blue-50 rounded-lg">
-                            <p className="text-[12px] text-blue-700 font-medium">{t("voteEducation", { max: MAX_VOTES })}</p>
-                            <p className="text-[11px] text-blue-500 mt-0.5">{t("votesLeft", { count: MAX_VOTES - myVotes.length })}</p>
-                          </div>
+                          <p className="text-[11px] text-gray-400 px-3 py-1.5">{t("voteEducation")}</p>
                           {filteredRegs.map((r) => {
                             const p = participants.find((pp) => pp.id === r.participantId);
                             if (!p) return null;
                             const voteCount = votes.filter((v) => v.participantId === p.id).length;
                             const alreadyVoted = myVotes.some((v) => v.participantId === p.id);
-                            const votesUsed = myVotes.length;
                             return (
                               <div key={p.id} className="flex items-center gap-2.5 py-2.5 px-3 bg-white rounded-lg">
                                 <AvatarIcon gender={p.gender} ageGroup={p.ageGroup} size={32} className="shrink-0 rounded-full" />
@@ -585,20 +579,18 @@ export default function GameDetailPage({
                                   <span className="text-[13px] font-semibold text-gray-900 truncate block">{p.name}</span>
                                   <span className="text-[10px] text-gray-400">{voteCount} {t("vote")}</span>
                                 </div>
-                                <div className="shrink-0">
-                                  {!alreadyVoted && votesUsed < MAX_VOTES && (
-                                    <button
-                                      onClick={() => handleVote(p.id)}
-                                      disabled={busyAction === `vote-${p.id}`}
-                                      className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
-                                    >
-                                      {busyAction === `vote-${p.id}` ? "..." : <><ThumbsUp className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />{t("vote")}</>}
-                                    </button>
+                                <button
+                                  onClick={() => handleVote(p.id)}
+                                  disabled={alreadyVoted || busyAction === `vote-${p.id}`}
+                                  className={cn(
+                                    "w-9 h-9 rounded-full flex items-center justify-center transition-all disabled:opacity-50",
+                                    alreadyVoted
+                                      ? "bg-pink-100 text-pink-500"
+                                      : "bg-gray-100 text-gray-400 hover:bg-pink-50 hover:text-pink-400"
                                   )}
-                                  {alreadyVoted && (
-                                    <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500">{t("voted")}</span>
-                                  )}
-                                </div>
+                                >
+                                  <Heart className={cn("w-5 h-5", alreadyVoted && "fill-current")} />
+                                </button>
                               </div>
                             );
                           })}

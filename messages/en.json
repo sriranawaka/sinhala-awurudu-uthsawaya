@@ -116,7 +116,7 @@
     "registerBtn": "Register",
     "registeredBtn": "Registered",
     "votesLeft": "{count} votes left",
-    "voteEducation": "You can vote for up to {max} different participants. Please be honest and fair!",
+    "voteEducation": "Tap the heart to vote for your favourites. Please be fair — vote only for those you genuinely enjoyed!",
     "votingNotStarted": "Voting has not started yet",
     "votingOver": "Voting is over",
     "vote": "Vote",
