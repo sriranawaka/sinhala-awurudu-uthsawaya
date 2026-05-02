@@ -719,8 +719,8 @@ export default function GameDetailPage({
                         )}
                       </div>
 
-                    {/* Show message when game not in progress */}
-                    {status !== "started" && status !== "finished" ? (
+                    {/* Show message when game not finished */}
+                    {status !== "finished" ? (
                       <p className="text-[13px] text-gray-400 text-center py-6">
                         Judges will be able to judge when the game is in progress
                       </p>
