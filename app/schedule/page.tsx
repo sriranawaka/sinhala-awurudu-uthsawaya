@@ -77,18 +77,25 @@ export default function SchedulePage() {
             )}>
               {item.name}
             </h3>
-            <p className={cn(
-              "text-[13px] truncate leading-tight mt-0.5",
-              current ? "text-amber-600" : "text-gray-400"
-            )}>
-              {item.startTime}
-            </p>
+            {item.nameSi && (
+              <p className={cn(
+                "text-[13px] truncate leading-tight mt-0.5",
+                current ? "text-amber-700" : "text-gray-400"
+              )}>
+                {item.nameSi}
+              </p>
+            )}
           </div>
-          {current && (
-            <span className="text-[11px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full shrink-0 uppercase tracking-wide">
-              Now
-            </span>
-          )}
+          <span className={cn(
+            "text-[13px] font-semibold px-2.5 py-0.5 rounded-full shrink-0",
+            current
+              ? "bg-amber-500 text-white"
+              : past
+                ? "bg-gray-200 text-gray-400"
+                : "bg-gray-200 text-gray-600"
+          )}>
+            {item.startTime}
+          </span>
         </div>
       </div>
     );
