@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { ArrowLeft, ChevronDown, UserPlus, UserCheck, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -363,6 +364,19 @@ export default function GameDetailPage({
             </div>
           );
         })()}
+
+        {/* Animated status icon */}
+        {isExpanded && (
+          <div className="flex justify-center py-4 bg-white border-t border-gray-100">
+            <Image
+              src={`/animations/${status === "not-started" ? "upcoming" : status === "starting-soon" ? "starting" : status === "started" || status === "voting" ? "inprogress" : "finish"}.gif`}
+              alt=""
+              width={128}
+              height={128}
+              unoptimized
+            />
+          </div>
+        )}
 
         {/* Expanded content */}
         {isExpanded && (
@@ -790,7 +804,7 @@ export default function GameDetailPage({
                       ) : (
                         <div className="space-y-1.5">
                           {/* Vote education */}
-                          <p className="text-[11px] text-gray-400 px-3 py-1.5">{t("voteEducation")}</p>
+                          <p className="text-sm font-medium text-amber-600 bg-amber-50 rounded-lg px-3 py-2">{t("voteEducation")}</p>
                           {filteredRegs.map((r) => {
                             const p = participants.find((pp) => pp.id === r.participantId);
                             if (!p) return null;
