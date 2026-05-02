@@ -402,10 +402,10 @@ export default function ParticipantsPage() {
         <div className="fixed bottom-16 left-0 right-0 z-10">
           <div className="max-w-lg mx-auto">
             <div className="h-8 bg-gradient-to-t from-white to-transparent" />
-            <div className="bg-white px-5 pb-3">
+            <div className="bg-white px-5 pb-3 flex justify-center">
               <button
                 onClick={() => setShowRegister(true)}
-                className="w-full bg-gray-900 text-white text-[15px] font-semibold py-3.5 rounded-full hover:bg-gray-800 transition-colors"
+                className="bg-gray-900 text-white text-[15px] font-semibold py-3.5 px-8 rounded-full hover:bg-gray-800 transition-colors"
               >
                 {t("register")}
               </button>
