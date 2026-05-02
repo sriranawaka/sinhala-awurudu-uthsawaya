@@ -164,14 +164,18 @@ describe("Registration eligibility filtering", () => {
   });
 
   it("maps positions to labels and medal PNGs", () => {
-    const positionLabel: Record<1 | 2 | 3, string> = { 1: "1st", 2: "2nd", 3: "3rd" };
-    const positionMedalSrc: Record<1 | 2 | 3, string> = { 1: "/medals/1st.png", 2: "/medals/2nd.png", 3: "/medals/3rd.png" };
+    const positionLabel: Record<1 | 2 | 3 | 4 | 5, string> = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th" };
+    const positionMedalSrc: Record<1 | 2 | 3 | 4 | 5, string> = { 1: "/medals/1st.png", 2: "/medals/2nd.png", 3: "/medals/3rd.png", 4: "", 5: "" };
     expect(positionLabel[1]).toBe("1st");
     expect(positionLabel[2]).toBe("2nd");
     expect(positionLabel[3]).toBe("3rd");
+    expect(positionLabel[4]).toBe("4th");
+    expect(positionLabel[5]).toBe("5th");
     expect(positionMedalSrc[1]).toBe("/medals/1st.png");
     expect(positionMedalSrc[2]).toBe("/medals/2nd.png");
     expect(positionMedalSrc[3]).toBe("/medals/3rd.png");
+    expect(positionMedalSrc[4]).toBe("");
+    expect(positionMedalSrc[5]).toBe("");
   });
 
   it("detects existing position holder for replacement", () => {

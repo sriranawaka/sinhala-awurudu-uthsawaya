@@ -164,7 +164,7 @@ export default function GameDetailPage({
     setBusyAction(null);
   };
 
-  const handleAssignMedal = async (participantId: string, participantName: string, position: 1 | 2 | 3, ageGroup: RegistrationAgeGroup) => {
+  const handleAssignMedal = async (participantId: string, participantName: string, position: 1 | 2 | 3 | 4 | 5, ageGroup: RegistrationAgeGroup) => {
     setBusyAction(`medal-${participantId}-${position}`);
     // Find all age groups in this event to check for duplicate positions across combined events
     const eventAgeGroups = eventKeyOrder
@@ -176,7 +176,7 @@ export default function GameDetailPage({
     // Also remove any existing score for this participant (if they had a different position)
     const existing = scores.find((s) => s.gameId === gameId && s.participantId === participantId);
     if (existing) await deleteScore(gameId, existing.participantId);
-    await setScore({ gameId, participantId, participantName, ageGroup, position, points: position === 1 ? 3 : position === 2 ? 2 : 1, timestamp: Date.now() });
+    await setScore({ gameId, participantId, participantName, ageGroup, position, points: 6 - position, timestamp: Date.now() });
     await refreshData();
     setBusyAction(null);
   };
@@ -530,7 +530,7 @@ export default function GameDetailPage({
                             {pScore && <span className="text-[10px] font-semibold text-amber-600">#{pScore.position}</span>}
                           </div>
                           <div className="flex items-center gap-0.5 shrink-0">
-                            {([1, 2, 3] as const).map((pos) => {
+                            {([1, 2, 3, 4, 5] as const).map((pos) => {
                               const taken = groupScores.some((sc) => sc.position === pos);
                               const isMe = pScore?.position === pos;
                               return (
@@ -539,7 +539,7 @@ export default function GameDetailPage({
                                   onClick={() => isMe ? handleRemoveMedal(p.id, participantRegGroup(p)) : handleAssignMedal(p.id, p.name, pos, participantRegGroup(p))}
                                   disabled={!isJudge || status === "finished" || busyAction === `medal-${p.id}-${pos}` || busyAction === `medal-${p.id}-remove`}
                                   className={cn(
-                                    "w-7 h-7 rounded-full text-[11px] font-bold transition-colors",
+                                    "w-6 h-6 rounded-full text-[10px] font-bold transition-colors",
                                     isMe
                                       ? status === "finished"
                                         ? cn("text-white opacity-60", meta.solid)
@@ -732,8 +732,8 @@ export default function GameDetailPage({
                         {sortedAnswer && (
                           <p className="text-[11px] text-gray-400">
                             {game.scoringType === "guess"
-                              ? "Sorted by closest guess. Assign 1st, 2nd, 3rd using the buttons."
-                              : "Sorted by similarity. Assign 1st, 2nd, 3rd using the buttons."}
+                              ? "Sorted by closest guess. Assign places using the buttons."
+                              : "Sorted by similarity. Assign places using the buttons."}
                           </p>
                         )}
                       </div>
@@ -779,9 +779,9 @@ export default function GameDetailPage({
                               )}
                             </div>
                           </div>
-                          {/* Medal buttons for judge to assign 1/2/3 */}
+                          {/* Medal buttons for judge to assign 1-5 */}
                           <div className="flex items-center gap-0.5 shrink-0">
-                              {([1, 2, 3] as const).map((pos) => {
+                              {([1, 2, 3, 4, 5] as const).map((pos) => {
                                 const taken = groupScores.some((sc) => sc.position === pos);
                                 const isMe = pScore?.position === pos;
                                 return (
@@ -790,7 +790,7 @@ export default function GameDetailPage({
                                     onClick={() => isMe ? handleRemoveMedal(p.id, participantRegGroup(p)) : handleAssignMedal(p.id, p.name, pos, participantRegGroup(p))}
                                     disabled={busyAction === `medal-${p.id}-${pos}` || busyAction === `medal-${p.id}-remove`}
                                     className={cn(
-                                      "w-7 h-7 rounded-full text-[11px] font-bold transition-colors",
+                                      "w-6 h-6 rounded-full text-[10px] font-bold transition-colors",
                                       isMe
                                         ? cn("text-white", meta.solid)
                                         : taken

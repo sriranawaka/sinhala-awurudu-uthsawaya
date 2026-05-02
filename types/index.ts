@@ -68,8 +68,8 @@ export interface Score {
   participantId: string;
   participantName: string;
   ageGroup?: RegistrationAgeGroup;
-  position: 1 | 2 | 3;
-  points: number; // 3, 2, or 1
+  position: 1 | 2 | 3 | 4 | 5;
+  points: number; // 5, 4, 3, 2, or 1
   judgedBy?: string;
   timestamp: number;
 }

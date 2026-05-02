@@ -225,7 +225,7 @@ export default function GameDetailPage({
     setGuessSubmitting(null);
   };
 
-  const handleAssignMedal = async (participant: Participant, position: 1 | 2 | 3, ageGroup: RegistrationAgeGroup) => {
+  const handleAssignMedal = async (participant: Participant, position: 1 | 2 | 3 | 4 | 5, ageGroup: RegistrationAgeGroup) => {
     setBusy(`medal_${participant.id}_${position}`);
     try {
       const ageScores = scores.filter((s) => (s.ageGroup || "adult") === ageGroup);
@@ -236,7 +236,7 @@ export default function GameDetailPage({
       } else {
         if (existingHolder) await deleteScore(gameId, existingHolder.participantId);
         if (existingForParticipant) await deleteScore(gameId, participant.id);
-        await setScore({ gameId, participantId: participant.id, participantName: participant.name, ageGroup, position, points: position === 1 ? 3 : position === 2 ? 2 : 1, timestamp: Date.now() });
+        await setScore({ gameId, participantId: participant.id, participantName: participant.name, ageGroup, position, points: 6 - position, timestamp: Date.now() });
       }
       const freshScores = await getScoresByGame(gameId);
       setScores(freshScores);
@@ -254,10 +254,10 @@ export default function GameDetailPage({
     const sorted = [...ageGuesses].sort((a, b) => Math.abs((a.guess as number) - answer) - Math.abs((b.guess as number) - answer));
     const existingAgeScores = scores.filter((s) => (s.ageGroup || "adult") === ageGroup);
     for (const s of existingAgeScores) await deleteScore(gameId, s.participantId);
-    const positions = [1, 2, 3] as const;
-    for (let i = 0; i < Math.min(3, sorted.length); i++) {
+    const positions = [1, 2, 3, 4, 5] as const;
+    for (let i = 0; i < Math.min(5, sorted.length); i++) {
       const g = sorted[i];
-      await setScore({ gameId, participantId: g.participantId, participantName: g.participantName, ageGroup, position: positions[i], points: positions[i] === 1 ? 3 : positions[i] === 2 ? 2 : 1, timestamp: Date.now() });
+      await setScore({ gameId, participantId: g.participantId, participantName: g.participantName, ageGroup, position: positions[i], points: 6 - positions[i], timestamp: Date.now() });
     }
     await refreshData();
     setCalculatingWinners(false);
@@ -426,7 +426,7 @@ export default function GameDetailPage({
                         ) : isJudge && eventStatus === "finished" && isRegistered ? (
                           /* Medal assignment */
                           <div className="flex items-center gap-0.5">
-                            {([1, 2, 3] as const).map((pos) => {
+                            {([1, 2, 3, 4, 5] as const).map((pos) => {
                               const isAssigned = pScore?.position === pos;
                               return (
                                 <button
@@ -434,7 +434,7 @@ export default function GameDetailPage({
                                   onClick={() => handleAssignMedal(p, pos, group.key)}
                                   disabled={busy === `medal_${p.id}_${pos}`}
                                   className={cn(
-                                    "w-7 h-7 rounded-full flex items-center justify-center text-[12px] transition-all",
+                                    "w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition-all",
                                     isAssigned
                                       ? "bg-amber-400 text-white scale-110"
                                       : "bg-gray-100 text-gray-400 hover:bg-amber-100 hover:text-amber-600"
@@ -448,7 +448,7 @@ export default function GameDetailPage({
                         ) : !isJudge && eventStatus === "finished" && isRegistered && pScore ? (
                           /* Public finished — medal badge */
                           <span className="text-[14px]">
-                            {pScore.position === 1 ? "🥇" : pScore.position === 2 ? "🥈" : "🥉"}
+                            {pScore.position === 1 ? "🥇" : pScore.position === 2 ? "🥈" : pScore.position === 3 ? "🥉" : `#${pScore.position}`}
                           </span>
                         ) : isRegistered && regAllowed ? (
                           /* Registered — can unregister */

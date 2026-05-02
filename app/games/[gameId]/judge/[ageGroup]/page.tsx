@@ -11,9 +11,9 @@ import { cn } from "@/lib/utils";
 import { AvatarIcon } from "@/components/avatar-icon";
 import type { Game, Participant, GameRegistration, RegistrationAgeGroup, Score } from "@/types";
 
-const positionPoints: Record<1 | 2 | 3, number> = { 1: 3, 2: 2, 3: 1 };
-const positionLabel: Record<1 | 2 | 3, string> = { 1: "1st", 2: "2nd", 3: "3rd" };
-const positionMedalSrc: Record<1 | 2 | 3, string> = { 1: "/medals/1st.png", 2: "/medals/2nd.png", 3: "/medals/3rd.png" };
+const positionPoints: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 5, 2: 4, 3: 3, 4: 2, 5: 1 };
+const positionLabel: Record<1 | 2 | 3 | 4 | 5, string> = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th" };
+const positionMedalSrc: Record<1 | 2 | 3 | 4 | 5, string> = { 1: "/medals/1st.png", 2: "/medals/2nd.png", 3: "/medals/3rd.png", 4: "", 5: "" };
 
 const groupConfig: Record<string, { label: string; color: string; lightColor: string }> = {
   adult: { label: "Adults", color: "bg-primary", lightColor: "bg-primary/10 text-primary" },
@@ -73,7 +73,7 @@ export default function JudgingPage({
   const scoreByParticipant = new Map(ageScores.map((s) => [s.participantId, s]));
   const scoreByPosition = new Map(ageScores.map((s) => [s.position, s]));
 
-  const handlePosition = async (participant: Participant, position: 1 | 2 | 3) => {
+  const handlePosition = async (participant: Participant, position: 1 | 2 | 3 | 4 | 5) => {
     setScoreBusy(true);
     try {
       const existing = scoreByParticipant.get(participant.id);
@@ -188,7 +188,7 @@ export default function JudgingPage({
                     </div>
                     {/* Position buttons */}
                     <div className="flex items-center gap-1.5 mt-2 ml-[52px]">
-                      {([1, 2, 3] as const).map((pos) => {
+                      {([1, 2, 3, 4, 5] as const).map((pos) => {
                         const isActive = pScore?.position === pos;
                         return (
                           <button
@@ -196,13 +196,17 @@ export default function JudgingPage({
                             onClick={() => handlePosition(p, pos)}
                             disabled={scoreBusy}
                             className={cn(
-                              "flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all disabled:opacity-50",
+                              "flex items-center gap-1 text-xs px-2 py-1 rounded-full border transition-all disabled:opacity-50",
                               isActive
                                 ? "border-amber-400 bg-amber-50 shadow-sm scale-105"
                                 : "border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100 opacity-60 hover:opacity-100"
                             )}
                           >
-                            <Image src={positionMedalSrc[pos]} alt={positionLabel[pos]} width={18} height={18} className={cn(isActive ? "" : "grayscale opacity-50")} />
+                            {positionMedalSrc[pos] ? (
+                              <Image src={positionMedalSrc[pos]} alt={positionLabel[pos]} width={18} height={18} className={cn(isActive ? "" : "grayscale opacity-50")} />
+                            ) : (
+                              <span className={cn("w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold", isActive ? "bg-amber-400 text-white" : "bg-gray-200 text-gray-500")}>{pos}</span>
+                            )}
                             <span className={cn("text-[10px] font-medium", isActive ? "text-amber-700" : "text-gray-400")}>{positionLabel[pos]}</span>
                           </button>
                         );

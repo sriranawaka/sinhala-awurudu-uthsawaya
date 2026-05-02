@@ -120,8 +120,11 @@ export default function AdminVotingPage() {
                 <div key={entry.id} className="space-y-1">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium flex items-center gap-1">
-                      {i < 3 && (
+                      {i < 5 && i < 3 && (
                         <Image src={`/medals/${i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"}.png`} alt={`${i + 1}`} width={18} height={18} className="inline-block" />
+                      )}
+                      {i >= 3 && i < 5 && (
+                        <span className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">{i + 1}</span>
                       )}
                       {entry.name}
                     </span>

@@ -32,7 +32,7 @@ function makeScore(
   participantId: string,
   name: string,
   ageGroup: RegistrationAgeGroup,
-  position: 1 | 2 | 3
+  position: 1 | 2 | 3 | 4 | 5
 ): Score {
   return {
     id: `${gameId}_${participantId}`,
@@ -41,7 +41,7 @@ function makeScore(
     participantName: name,
     ageGroup,
     position,
-    points: position === 1 ? 3 : position === 2 ? 2 : 1,
+    points: 6 - position,
     timestamp: Date.now(),
   };
 }
@@ -869,7 +869,7 @@ describe("Count Toffee Bottle guess sorting and judge assignment", () => {
   function calculateGuessWinners(
     guesses: { participantId: string; participantName: string; guess: number }[],
     correctAnswer: number,
-    maxWinners = 3
+    maxWinners = 5
   ): { participantId: string; participantName: string; position: number; points: number }[] {
     const sorted = [...guesses].sort(
       (a, b) => Math.abs(a.guess - correctAnswer) - Math.abs(b.guess - correctAnswer)
@@ -877,12 +877,12 @@ describe("Count Toffee Bottle guess sorting and judge assignment", () => {
     return sorted.slice(0, Math.min(maxWinners, sorted.length)).map((g, i) => ({
       participantId: g.participantId,
       participantName: g.participantName,
-      position: (i + 1) as 1 | 2 | 3,
-      points: i === 0 ? 3 : i === 1 ? 2 : 1,
+      position: (i + 1) as 1 | 2 | 3 | 4 | 5,
+      points: 5 - i,
     }));
   }
 
-  it("picks 3 closest guesses to correct answer", () => {
+  it("picks closest guesses to correct answer (up to 5)", () => {
     const guesses = [
       { participantId: "p1", participantName: "A", guess: 50 },
       { participantId: "p2", participantName: "B", guess: 42 },
@@ -890,32 +890,33 @@ describe("Count Toffee Bottle guess sorting and judge assignment", () => {
       { participantId: "p4", participantName: "D", guess: 30 },
     ];
     const winners = calculateGuessWinners(guesses, 45);
-    expect(winners).toHaveLength(3);
+    expect(winners).toHaveLength(4);
     expect(winners[0].participantId).toBe("p2"); // 42, diff=3
     expect(winners[1].participantId).toBe("p1"); // 50, diff=5
     expect(winners[2].participantId).toBe("p3"); // 55, diff=10
+    expect(winners[3].participantId).toBe("p4"); // 30, diff=15
   });
 
-  it("assigns correct points (3, 2, 1)", () => {
+  it("assigns correct points (5, 4, 3, 2, 1)", () => {
     const guesses = [
       { participantId: "p1", participantName: "A", guess: 10 },
       { participantId: "p2", participantName: "B", guess: 12 },
       { participantId: "p3", participantName: "C", guess: 20 },
     ];
     const winners = calculateGuessWinners(guesses, 11);
-    expect(winners[0].points).toBe(3);
-    expect(winners[1].points).toBe(2);
-    expect(winners[2].points).toBe(1);
+    expect(winners[0].points).toBe(5);
+    expect(winners[1].points).toBe(4);
+    expect(winners[2].points).toBe(3);
   });
 
-  it("handles fewer than 3 guesses", () => {
+  it("handles fewer than 5 guesses", () => {
     const guesses = [
       { participantId: "p1", participantName: "A", guess: 10 },
     ];
     const winners = calculateGuessWinners(guesses, 11);
     expect(winners).toHaveLength(1);
     expect(winners[0].position).toBe(1);
-    expect(winners[0].points).toBe(3);
+    expect(winners[0].points).toBe(5);
   });
 
   it("handles exact match as closest", () => {
@@ -965,7 +966,7 @@ describe("Count Toffee Bottle guess sorting and judge assignment", () => {
     expect(groupScores.slice(0, 3)).toHaveLength(3);
   });
 
-  it("combined event calculates 3 winners across all guesses (no age group filtering)", () => {
+  it("combined event calculates winners across all guesses (no age group filtering)", () => {
     // For kid+teen+adult combined event, all guesses compete together regardless of registration
     const guesses = [
       { participantId: "kid1", participantName: "Kid1", guess: 40 },
@@ -975,11 +976,12 @@ describe("Count Toffee Bottle guess sorting and judge assignment", () => {
     ];
     // No age group filtering — use all guesses directly
     const winners = calculateGuessWinners(guesses, 45);
-    // Should be 3 total, not 3 per age group
-    expect(winners).toHaveLength(3);
+    // Should be 4 total (all guesses, up to 5 max)
+    expect(winners).toHaveLength(4);
     expect(winners[0].participantId).toBe("teen1"); // 42, diff=3
     expect(winners[1].participantId).toBe("kid1");  // 40, diff=5
     expect(winners[2].participantId).toBe("adult1"); // 50, diff=5 (stable sort, adult1 after kid1)
+    expect(winners[3].participantId).toBe("adult2"); // 100, diff=55
   });
 
   it("guess value is shown under participant name", () => {
@@ -1158,7 +1160,7 @@ describe("Unique position enforcement in medal assignment", () => {
     participantId: string,
     participantName: string,
     ageGroup: RegistrationAgeGroup,
-    position: 1 | 2 | 3
+    position: 1 | 2 | 3 | 4 | 5
   ): Score[] {
     let updated = [...scores];
     // Remove previous holder of this position across all age groups in the event

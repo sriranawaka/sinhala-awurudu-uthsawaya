@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 import { getGames, getParticipants, setScore, getScoresByGame, deleteScoresByGame } from "@/lib/db";
 import type { Game, Participant, Score, RegistrationAgeGroup } from "@/types";
 
-type Position = 1 | 2 | 3;
-const POINTS: Record<Position, number> = { 1: 3, 2: 2, 3: 1 };
+type Position = 1 | 2 | 3 | 4 | 5;
+const POINTS: Record<Position, number> = { 1: 5, 2: 4, 3: 3, 4: 2, 5: 1 };
 
 interface ScoreState {
   [participantId: string]: Position | undefined;
@@ -54,6 +54,8 @@ export default function AdminScoringPage() {
     1: { src: "/medals/1st.png", label: t("first"), color: "bg-yellow-400 text-yellow-900" },
     2: { src: "/medals/2nd.png", label: t("second"), color: "bg-gray-300 text-gray-800" },
     3: { src: "/medals/3rd.png", label: t("third"), color: "bg-amber-600 text-white" },
+    4: { src: "", label: "4th", color: "bg-blue-100 text-blue-800" },
+    5: { src: "", label: "5th", color: "bg-blue-50 text-blue-600" },
   };
 
   const assignPosition = (participantId: string, pos: Position) => {
@@ -153,9 +155,13 @@ export default function AdminScoringPage() {
 
       {/* Position Legend */}
       <div className="flex gap-2 text-xs">
-        {([1, 2, 3] as Position[]).map((pos) => (
+        {([1, 2, 3, 4, 5] as Position[]).map((pos) => (
           <span key={pos} className={cn("px-3 py-1 rounded-full", positionLabels[pos].color)}>
-            <Image src={positionLabels[pos].src} alt={positionLabels[pos].label} width={16} height={16} className="inline-block" /> {positionLabels[pos].label}
+            {positionLabels[pos].src ? (
+              <Image src={positionLabels[pos].src} alt={positionLabels[pos].label} width={16} height={16} className="inline-block" />
+            ) : (
+              <span className="inline-block w-4 h-4 text-[10px] font-bold text-center">{pos}</span>
+            )} {positionLabels[pos].label}
           </span>
         ))}
       </div>
@@ -170,8 +176,11 @@ export default function AdminScoringPage() {
               className="bg-white rounded-xl p-3 shadow-sm border border-gold/10 flex items-center justify-between"
             >
               <div className="flex items-center gap-2">
-                {currentPos && (
+                {currentPos && positionLabels[currentPos].src && (
                   <Image src={positionLabels[currentPos].src} alt={positionLabels[currentPos].label} width={22} height={22} />
+                )}
+                {currentPos && !positionLabels[currentPos].src && (
+                  <span className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-xs font-bold bg-blue-100 text-blue-700">{currentPos}</span>
                 )}
                 <div>
                   <span className={cn("text-sm font-medium", currentPos && "text-maroon")}>
@@ -180,8 +189,8 @@ export default function AdminScoringPage() {
                   <span className="text-[10px] text-foreground/40 ml-1.5">{p.ageGroup}</span>
                 </div>
               </div>
-              <div className="flex gap-1.5">
-                {([1, 2, 3] as Position[]).map((pos) => (
+              <div className="flex gap-1">
+                {([1, 2, 3, 4, 5] as Position[]).map((pos) => (
                   <button
                     key={pos}
                     onClick={() => assignPosition(p.id, pos)}
